@@ -10,6 +10,8 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
 from analysis import analizar_dataset
 
 # ──────────────────────────────────────────────────────────────────────────────
