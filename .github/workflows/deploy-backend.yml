@@ -1,0 +1,30 @@
+# .github/workflows/deploy-backend.yml
+# Cuando cambia algo en /api, avisa a Render para que re-depliegue el backend.
+# Render también hace auto-deploy si conectas el repo directamente desde su dashboard.
+# Este workflow es útil como respaldo o si prefieres controlarlo desde GitHub.
+
+name: Notify Render → Redeploy Backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "render.yaml"
+  workflow_dispatch:
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render Deploy Hook
+        # RENDER_DEPLOY_HOOK_URL se crea en Render:
+        # Dashboard → tu servicio → Settings → Deploy Hook → Create
+        # Luego agrégalo en GitHub: Settings → Secrets → RENDER_DEPLOY_HOOK_URL
+        run: |
+          if [ -n "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" ]; then
+            curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+            echo "✅ Render deploy hook triggered"
+          else
+            echo "⚠️  RENDER_DEPLOY_HOOK_URL no configurado. Deploy manual requerido."
+          fi
