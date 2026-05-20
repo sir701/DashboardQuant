@@ -7,7 +7,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "frontend/**"   # Solo corre si cambió algo en la carpeta frontend
+      - "index.html"   # Solo corre si cambió algo en la carpeta frontend
   workflow_dispatch:     # También permite dispararlo manualmente
 
 permissions:
