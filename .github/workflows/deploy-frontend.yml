@@ -1,1 +1,50 @@
+# .github/workflows/deploy-frontend.yml
+# Auto-despliega el contenido de /frontend a GitHub Pages en cada push a main.
 
+name: Deploy Frontend → GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"   # Solo corre si cambió algo en la carpeta frontend
+  workflow_dispatch:     # También permite dispararlo manualmente
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Inyecta la URL del backend en el index.html ───────────────────────
+      # La variable BACKEND_URL se define en Settings → Secrets and variables
+      # → Actions → Variables (no Secrets, porque no es confidencial).
+      - name: Inject API URL
+        run: |
+          sed -i "s|__BACKEND_URL__|${{ vars.BACKEND_URL }}|g" frontend/index.html
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./frontend
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
