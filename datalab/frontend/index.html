@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DataLab — Análisis Exploratorio</title>
+
+  <!--
+    ════════════════════════════════════════════════════════════
+    FRONTEND SCAFFOLD — DataLab
+    ────────────────────────────────────────────────────────────
+    Este archivo es el punto de entrada en GitHub Pages.
+    Toda la lógica de análisis vive en el backend (FastAPI).
+    Aquí solo:
+      1. Recibimos el archivo del usuario
+      2. Lo enviamos al backend con fetch()
+      3. Renderizamos la respuesta con Plotly.js
+
+    La URL del backend se inyecta automáticamente por GitHub Actions.
+    En desarrollo local: cambia BACKEND_URL al valor de abajo.
+    ════════════════════════════════════════════════════════════
+  -->
+
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+
+  <style>
+    /* ── Variables base (Claude Design puede sobreescribir todo) ── */
+    :root {
+      --bg: #f8f9fa;
+      --surface: #ffffff;
+      --border: #dee2e6;
+      --text: #212529;
+      --muted: #6c757d;
+      --accent: #4A6FDC;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+
+    /* ── Pantallas ── */
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    /* UPLOAD */
+    #screen-upload {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      min-height: 100vh; padding: 2rem; gap: 1.5rem;
+    }
+    #screen-upload h1 { font-size: 2rem; font-weight: 700; }
+    #screen-upload p  { color: var(--muted); }
+
+    #drop-zone {
+      border: 2px dashed var(--border); border-radius: 12px;
+      width: 100%; max-width: 500px; padding: 3rem 2rem;
+      text-align: center; cursor: pointer; transition: all .2s;
+      background: var(--surface);
+    }
+    #drop-zone.over { border-color: var(--accent); background: #eef2ff; }
+    #drop-zone p { color: var(--muted); margin-top: .5rem; font-size: .9rem; }
+
+    #file-input { display: none; }
+
+    button {
+      background: var(--accent); color: white; border: none;
+      border-radius: 8px; padding: .75rem 2rem;
+      font-size: 1rem; font-weight: 600; cursor: pointer;
+      transition: opacity .15s;
+    }
+    button:hover { opacity: .85; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* LOADING */
+    #screen-loading {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      min-height: 100vh; gap: 1rem;
+    }
+    .spinner {
+      width: 44px; height: 44px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading-msg { color: var(--muted); font-size: .9rem; }
+
+    /* ERROR */
+    #screen-error {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      min-height: 100vh; gap: 1rem; padding: 2rem; text-align: center;
+    }
+    #error-msg { color: #dc2626; max-width: 480px; }
+
+    /* DASHBOARD */
+    #screen-dashboard { min-height: 100vh; }
+
+    /* Topbar */
+    #topbar {
+      position: sticky; top: 0; z-index: 50;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 1rem;
+      padding: .75rem 1.5rem;
+    }
+    #topbar h2 { font-size: 1rem; font-weight: 700; color: var(--accent); }
+    #topbar-file { font-size: .8rem; color: var(--muted); }
+    #topbar-spacer { flex: 1; }
+    #btn-reset {
+      background: transparent; color: var(--muted);
+      border: 1px solid var(--border); padding: .4rem .9rem;
+      font-size: .8rem; font-weight: 500; border-radius: 6px;
+    }
+
+    /* KPI Cards */
+    #kpi-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1rem; padding: 1.5rem;
+    }
+    .kpi-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1.25rem 1rem; text-align: center;
+    }
+    .kpi-value { font-size: 2rem; font-weight: 700; color: var(--accent); }
+    .kpi-label { font-size: .8rem; color: var(--muted); margin-top: .25rem; }
+
+    /* Tabs */
+    #tabs-bar {
+      display: flex; gap: 0;
+      border-bottom: 1px solid var(--border);
+      padding: 0 1.5rem; overflow-x: auto;
+      background: var(--surface);
+    }
+    .tab-btn {
+      background: transparent; color: var(--muted);
+      border: none; border-bottom: 2px solid transparent;
+      padding: .75rem 1.25rem; font-size: .9rem; font-weight: 500;
+      cursor: pointer; white-space: nowrap; border-radius: 0;
+      transition: all .15s;
+    }
+    .tab-btn:hover  { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* Tab panels */
+    .tab-panel { display: none; padding: 1.5rem; }
+    .tab-panel.active { display: block; }
+
+    /* Tables */
+    .data-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    .data-table th {
+      background: #f1f3f5; text-align: left;
+      padding: .6rem .75rem; border-bottom: 2px solid var(--border);
+      font-weight: 600; white-space: nowrap;
+    }
+    .data-table td {
+      padding: .5rem .75rem; border-bottom: 1px solid var(--border);
+    }
+    .data-table tr:hover td { background: #fafafa; }
+
+    .table-wrapper { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }
+
+    /* Variable cards */
+    .var-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; margin-bottom: 2rem; overflow: hidden;
+    }
+    .var-card-header {
+      display: flex; align-items: center; gap: .75rem;
+      padding: 1rem 1.25rem; border-bottom: 1px solid var(--border);
+      background: #f8f9fa;
+    }
+    .var-badge {
+      font-size: .7rem; font-weight: 700; letter-spacing: .05em;
+      padding: .2rem .55rem; border-radius: 4px;
+      text-transform: uppercase;
+    }
+    .var-badge.num { background: #dbeafe; color: #1d4ed8; }
+    .var-badge.cat { background: #d1fae5; color: #065f46; }
+    .var-card-body { padding: 1.25rem; }
+    .charts-row {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;
+    }
+    @media (max-width: 700px) { .charts-row { grid-template-columns: 1fr; } }
+
+    /* Variable filter */
+    #var-filter {
+      width: 100%; max-width: 360px;
+      padding: .6rem .9rem; border: 1px solid var(--border);
+      border-radius: 8px; font-size: .9rem;
+      margin-bottom: 1.5rem; outline: none;
+    }
+    #var-filter:focus { border-color: var(--accent); }
+
+    /* Section title */
+    .section-title {
+      font-size: 1.1rem; font-weight: 700;
+      margin-bottom: 1rem; color: var(--text);
+    }
+
+    /* Alert */
+    .alert {
+      padding: .75rem 1rem; border-radius: 8px;
+      font-size: .9rem; margin-bottom: 1rem;
+    }
+    .alert-ok      { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+    .alert-warning { background: #fef9c3; color: #854d0e; border: 1px solid #fde047; }
+    .alert-danger  { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+
+    /* Preview table container */
+    #preview-wrap { max-height: 400px; overflow-y: auto; }
+
+    /* Plotly container */
+    .plot-box { min-height: 320px; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- PANTALLA 1 — UPLOAD                                    -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div id="screen-upload">
+  <h1>DataLab</h1>
+  <p>Sube cualquier dataset y obtén el análisis exploratorio completo en segundos.</p>
+
+  <div id="drop-zone">
+    <div style="font-size:3rem">📊</div>
+    <strong>Arrastra tu archivo aquí</strong>
+    <p>CSV · Excel (.xlsx / .xls) · JSON</p>
+    <br>
+    <button onclick="document.getElementById('file-input').click()">
+      Seleccionar archivo
+    </button>
+    <input type="file" id="file-input" accept=".csv,.xlsx,.xls,.json" />
+  </div>
+
+  <p style="font-size:.8rem;color:var(--muted)">
+    El análisis corre en el servidor — tus datos no se almacenan.
+  </p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- PANTALLA 2 — LOADING                                   -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div id="screen-loading" style="display:none">
+  <div class="spinner"></div>
+  <p id="loading-msg">Subiendo archivo…</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- PANTALLA 3 — ERROR                                     -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div id="screen-error" style="display:none">
+  <div style="font-size:3rem">⚠️</div>
+  <h2>Algo salió mal</h2>
+  <p id="error-msg"></p>
+  <button onclick="resetApp()">Intentar de nuevo</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- PANTALLA 4 — DASHBOARD                                 -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div id="screen-dashboard" style="display:none">
+
+  <!-- Topbar -->
+  <div id="topbar">
+    <h2>DataLab</h2>
+    <span id="topbar-file"></span>
+    <div id="topbar-spacer"></div>
+    <button id="btn-reset" onclick="resetApp()">← Nuevo archivo</button>
+  </div>
+
+  <!-- KPI Cards -->
+  <div id="kpi-row"></div>
+
+  <!-- Tabs nav -->
+  <div id="tabs-bar">
+    <button class="tab-btn active" data-tab="tab-datos">Datos</button>
+    <button class="tab-btn" data-tab="tab-calidad">Calidad</button>
+    <button class="tab-btn" data-tab="tab-variables">Variables</button>
+    <button class="tab-btn" data-tab="tab-correlacion">Correlación</button>
+  </div>
+
+  <!-- ── Tab: Datos ── -->
+  <div class="tab-panel active" id="tab-datos">
+    <p class="section-title">Vista previa — primeras 10 filas</p>
+    <div class="table-wrapper" id="preview-wrap"><p>Cargando…</p></div>
+
+    <br>
+    <p class="section-title" style="margin-top:1.5rem">Descripción de variables</p>
+    <div class="table-wrapper">
+      <table class="data-table" id="calidad-table"></table>
+    </div>
+  </div>
+
+  <!-- ── Tab: Calidad ── -->
+  <div class="tab-panel" id="tab-calidad">
+    <div id="calidad-alerts"></div>
+    <br>
+    <p class="section-title">Faltantes por variable</p>
+    <div class="table-wrapper">
+      <table class="data-table" id="calidad-table2"></table>
+    </div>
+    <br>
+    <div id="duplicados-info"></div>
+  </div>
+
+  <!-- ── Tab: Variables ── -->
+  <div class="tab-panel" id="tab-variables">
+    <input type="text" id="var-filter" placeholder="Filtrar variable…" />
+    <div id="variables-container"></div>
+  </div>
+
+  <!-- ── Tab: Correlación ── -->
+  <div class="tab-panel" id="tab-correlacion">
+    <p class="section-title">Heatmap de Correlación</p>
+    <div id="chart-heatmap" class="plot-box"></div>
+    <br>
+    <p class="section-title">Treemap Jerárquico</p>
+    <div id="chart-treemap" class="plot-box"></div>
+  </div>
+
+</div><!-- /dashboard -->
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- JAVASCRIPT                                             -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<script>
+// ── Configuración ──────────────────────────────────────────────────────────
+// GitHub Actions inyecta la URL real al hacer deploy (via sed en el workflow).
+// En desarrollo local, cámbiala manualmente.
+const BACKEND_URL = "__BACKEND_URL__";
+// Ejemplo local: const BACKEND_URL = "http://127.0.0.1:8000";
+
+// ── Estado global ──────────────────────────────────────────────────────────
+let currentData = null;
+
+// ══════════════════════════════════════════════════════════
+// UPLOAD — Drag & Drop + input[file]
+// ══════════════════════════════════════════════════════════
+const dropZone  = document.getElementById("drop-zone");
+const fileInput = document.getElementById("file-input");
+
+dropZone.addEventListener("dragover",  e => { e.preventDefault(); dropZone.classList.add("over"); });
+dropZone.addEventListener("dragleave", ()  => dropZone.classList.remove("over"));
+dropZone.addEventListener("drop",      e  => {
+  e.preventDefault(); dropZone.classList.remove("over");
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+fileInput.addEventListener("change", e => {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+// ══════════════════════════════════════════════════════════
+// HANDLE FILE — envía al backend y procesa respuesta
+// ══════════════════════════════════════════════════════════
+async function handleFile(file) {
+  showScreen("loading");
+  setLoadingMsg("Subiendo archivo…");
+
+  const form = new FormData();
+  form.append("file", file);
+
+  try {
+    setLoadingMsg("Analizando dataset…");
+    const res  = await fetch(`${BACKEND_URL}/analyze`, { method: "POST", body: form });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || `Error ${res.status}`);
+    }
+
+    setLoadingMsg("Renderizando dashboard…");
+    const data = await res.json();
+    currentData = data;
+    renderDashboard(data, file.name);
+    showScreen("dashboard");
+
+  } catch (e) {
+    document.getElementById("error-msg").textContent = e.message;
+    showScreen("error");
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// RENDER DASHBOARD
+// ══════════════════════════════════════════════════════════
+function renderDashboard(d, filename) {
+
+  // Topbar
+  document.getElementById("topbar-file").textContent = filename;
+
+  // ── KPI Cards ──────────────────────────────────────────
+  const kpiData = [
+    { value: d.meta.filas.toLocaleString(),          label: "Total registros"        },
+    { value: d.meta.columnas,                         label: "Variables"              },
+    { value: d.meta.cols_numericas,                   label: "Numéricas"              },
+    { value: d.meta.cols_categoricas,                 label: "Categóricas"            },
+    { value: d.duplicados,                            label: "Duplicadas"             },
+    { value: d.cols_con_faltantes,                    label: "Vars. con faltantes"    },
+  ];
+  document.getElementById("kpi-row").innerHTML = kpiData.map(k =>
+    `<div class="kpi-card">
+       <div class="kpi-value">${k.value}</div>
+       <div class="kpi-label">${k.label}</div>
+     </div>`
+  ).join("");
+
+  // ── Tab: Datos ─────────────────────────────────────────
+  renderTable("preview-wrap", buildPreviewTable(d));
+  renderTableEl(document.getElementById("calidad-table"), d.calidad);
+
+  // ── Tab: Calidad ───────────────────────────────────────
+  const alertsEl = document.getElementById("calidad-alerts");
+  alertsEl.innerHTML = "";
+  if (d.duplicados === 0) {
+    alertsEl.innerHTML += alert_html("ok", "✔ Sin filas duplicadas.");
+  } else {
+    alertsEl.innerHTML += alert_html("danger", `⚠ ${d.duplicados.toLocaleString()} filas duplicadas detectadas.`);
+  }
+  if (d.cols_con_faltantes === 0) {
+    alertsEl.innerHTML += alert_html("ok", "✔ Ninguna variable tiene datos faltantes.");
+  } else {
+    alertsEl.innerHTML += alert_html("warning", `⚠ ${d.cols_con_faltantes} variable(s) tienen datos faltantes.`);
+  }
+  renderTableEl(document.getElementById("calidad-table2"), d.calidad);
+
+  const dupEl = document.getElementById("duplicados-info");
+  dupEl.innerHTML = `<p class="section-title">Duplicados</p>
+    <div class="${d.duplicados > 0 ? "alert alert-danger" : "alert alert-ok"}">
+      ${d.duplicados > 0
+        ? `Se encontraron <strong>${d.duplicados.toLocaleString()}</strong> filas duplicadas
+           (${((d.duplicados/d.meta.filas)*100).toFixed(2)}% del total).`
+        : "No se encontraron filas duplicadas."}
+    </div>`;
+
+  // ── Tab: Variables ─────────────────────────────────────
+  renderVariables(d.variables);
+
+  // ── Tab: Correlación ───────────────────────────────────
+  renderGlobalCharts(d.charts_global);
+
+  // ── Filtro de variables ────────────────────────────────
+  document.getElementById("var-filter").addEventListener("input", e => {
+    const q = e.target.value.toLowerCase();
+    document.querySelectorAll(".var-card").forEach(card => {
+      card.style.display = card.dataset.name.toLowerCase().includes(q) ? "" : "none";
+    });
+  });
+}
+
+// ── Construye preview table desde calidad (no tenemos rows en /analyze) ──
+function buildPreviewTable(d) {
+  // El endpoint /analyze no devuelve rows. Mostramos un mensaje con los datos de calidad.
+  return `<div style="padding:1rem;color:var(--muted);font-size:.9rem">
+    Vista previa no disponible desde <code>/analyze</code>.
+    El endpoint <code>/preview</code> devuelve las primeras filas si lo necesitas.
+    <br><br>El dataset tiene <strong>${d.meta.filas.toLocaleString()} filas</strong>
+    × <strong>${d.meta.columnas} columnas</strong>.
+  </div>`;
+}
+
+function renderTable(containerId, html) {
+  document.getElementById(containerId).innerHTML = html;
+}
+
+function renderTableEl(el, rows) {
+  if (!rows || !rows.length) { el.innerHTML = "<tr><td>Sin datos</td></tr>"; return; }
+  const cols = Object.keys(rows[0]);
+  el.innerHTML =
+    `<thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>` +
+    `<tbody>${rows.map(r =>
+      `<tr>${cols.map(c => `<td>${r[c] ?? ""}</td>`).join("")}</tr>`
+    ).join("")}</tbody>`;
+}
+
+function alert_html(type, msg) {
+  return `<div class="alert alert-${type}">${msg}</div>`;
+}
+
+// ── Render variables ───────────────────────────────────────────────────────
+function renderVariables(variables) {
+  const container = document.getElementById("variables-container");
+  container.innerHTML = "";
+
+  for (const [col, info] of Object.entries(variables)) {
+    const isNum = info.tipo === "numerica";
+    const card  = document.createElement("div");
+    card.className   = "var-card";
+    card.dataset.name = col;
+
+    let bodyHTML = "";
+
+    if (isNum) {
+      const statsRows = (info.estadisticas || []).map(r =>
+        `<tr><td style="color:var(--muted);font-size:.8rem">${r.Grupo}</td>
+             <td>${r.Medida}</td>
+             <td style="font-weight:600;font-variant-numeric:tabular-nums">${r.Valor}</td></tr>`
+      ).join("");
+      bodyHTML = `
+        <div class="table-wrapper" style="max-width:560px">
+          <table class="data-table">
+            <thead><tr><th>Grupo</th><th>Medida</th><th>Valor</th></tr></thead>
+            <tbody>${statsRows}</tbody>
+          </table>
+        </div>
+        <div class="charts-row" id="charts-${sanitizeId(col)}"></div>`;
+    } else {
+      const freqRows = (info.tabla_frecuencias || []).map(r =>
+        `<tr><td>${r["Categoría"]}</td><td>${r["Frecuencia"].toLocaleString()}</td>
+             <td>${r["% Relativo"]}%</td><td>${r["% Acumulado"]}%</td></tr>`
+      ).join("");
+      bodyHTML = `
+        <div class="table-wrapper" style="max-width:560px">
+          <table class="data-table">
+            <thead><tr><th>Categoría</th><th>Frecuencia</th><th>% Relativo</th><th>% Acumulado</th></tr></thead>
+            <tbody>${freqRows}</tbody>
+          </table>
+        </div>
+        <div id="charts-${sanitizeId(col)}" style="margin-top:1rem"></div>`;
+    }
+
+    const metaStr = Object.entries(info.meta || {})
+      .map(([k,v]) => `<span style="color:var(--muted)">${k}:</span> <strong>${v}</strong>`)
+      .join(" &nbsp;·&nbsp; ");
+
+    card.innerHTML = `
+      <div class="var-card-header">
+        <span class="var-badge ${isNum ? "num" : "cat"}">${isNum ? "Numérica" : "Categórica"}</span>
+        <strong>${col}</strong>
+        <span style="font-size:.8rem;color:var(--muted);margin-left:auto">${metaStr}</span>
+      </div>
+      <div class="var-card-body">${bodyHTML}</div>`;
+
+    container.appendChild(card);
+
+    // Renderizar gráficos Plotly
+    const chartsDiv = document.getElementById(`charts-${sanitizeId(col)}`);
+    if (info.charts) {
+      if (isNum) {
+        if (info.charts.histograma) {
+          const d1 = document.createElement("div"); d1.className = "plot-box";
+          chartsDiv.appendChild(d1);
+          Plotly.react(d1, JSON.parse(info.charts.histograma));
+        }
+        if (info.charts.boxplot) {
+          const d2 = document.createElement("div"); d2.className = "plot-box";
+          chartsDiv.appendChild(d2);
+          Plotly.react(d2, JSON.parse(info.charts.boxplot));
+        }
+      } else {
+        if (info.charts.categorico) {
+          const d3 = document.createElement("div"); d3.className = "plot-box";
+          chartsDiv.appendChild(d3);
+          Plotly.react(d3, JSON.parse(info.charts.categorico));
+        }
+      }
+    }
+  }
+}
+
+// ── Render heatmap + treemap ───────────────────────────────────────────────
+function renderGlobalCharts(charts) {
+  if (charts?.heatmap) {
+    Plotly.react(document.getElementById("chart-heatmap"), JSON.parse(charts.heatmap));
+  } else {
+    document.getElementById("chart-heatmap").innerHTML =
+      `<p style="color:var(--muted);padding:1rem">Se necesitan ≥2 variables numéricas con varianza.</p>`;
+  }
+  if (charts?.treemap) {
+    Plotly.react(document.getElementById("chart-treemap"), JSON.parse(charts.treemap));
+  } else {
+    document.getElementById("chart-treemap").innerHTML =
+      `<p style="color:var(--muted);padding:1rem">Se necesita ≥1 variable categórica.</p>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// TABS
+// ══════════════════════════════════════════════════════════
+document.getElementById("tabs-bar").addEventListener("click", e => {
+  const btn = e.target.closest(".tab-btn");
+  if (!btn) return;
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+  btn.classList.add("active");
+  document.getElementById(btn.dataset.tab).classList.add("active");
+  // Fuerza resize de Plotly al cambiar tab (evita gráficos colapsados)
+  window.dispatchEvent(new Event("resize"));
+});
+
+// ══════════════════════════════════════════════════════════
+// UTILIDADES
+// ══════════════════════════════════════════════════════════
+function showScreen(name) {
+  ["upload","loading","error","dashboard"].forEach(s => {
+    document.getElementById(`screen-${s}`).style.display =
+      s === name ? (name === "loading" ? "flex" : "block") : "none";
+  });
+  if (name === "upload") {
+    document.getElementById("screen-upload").style.display = "flex";
+  }
+}
+showScreen("upload");
+
+function setLoadingMsg(msg) {
+  document.getElementById("loading-msg").textContent = msg;
+}
+
+function resetApp() {
+  currentData = null;
+  document.getElementById("file-input").value = "";
+  showScreen("upload");
+}
+
+function sanitizeId(str) {
+  return str.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+</script>
+</body>
+</html>
