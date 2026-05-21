@@ -113,6 +113,15 @@ def tabla_frecuencias(valores, max_cat=15):
 # ──────────────────────────────────────────────────────────────────────────────
 
 def analizar_dataset(df: pd.DataFrame) -> dict:
+    # ── ⓪ LIMPIEZA: convierte columnas numéricas-de-texto a números reales ──
+    # Esto resuelve el caso de comas como separador de miles (ej: '1,678').
+    # Sin esto, .corr() y .std() fallan sobre columnas de texto.
+    df = df.copy()
+    for col in df.columns:
+        # Si NO es ya un tipo numérico de pandas pero clasifica como numérica → convertir
+        if not pd.api.types.is_numeric_dtype(df[col]) and clasificar_columna(df[col]) == "numerica":
+            df[col] = pd.to_numeric(df[col].map(a_numero), errors="coerce")
+
     # ① Duplicados
     vistas = set(); duplicados = 0
     for _, fila in df.iterrows():
@@ -207,7 +216,7 @@ def analizar_dataset(df: pd.DataFrame) -> dict:
                          "cols_categoricas": len(cols_cat)},
         "calidad":      calidad,
         "duplicados":   duplicados,
-        "cols_con_faltantes": sum(1 for r in calidad if r["Faltantes"] > 0),
+        "cols_con_faltantes": sum(1 for r in calidad if r["nulos"] > 0),
         "cols_numericas":  cols_num,
         "cols_categoricas": cols_cat,
         "variables":    variables,
