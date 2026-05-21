@@ -41,7 +41,7 @@ def _ly(**kw):
 
 def a_numero(v):
     try:
-        return float(v)
+        return float(str(v).replace(",", ""))
     except:
         return None
 
