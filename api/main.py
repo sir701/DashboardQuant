@@ -91,7 +91,21 @@ async def analyze(file: UploadFile = File(...)):
         raise HTTPException(status_code=500,
                             detail=f"Error durante el análisis: {str(e)}")
 
-    return JSONResponse(content=resultado)
+    import math, json
+
+def limpiar_json(obj):
+    """Reemplaza NaN/Inf por None recursivamente."""
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: limpiar_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [limpiar_json(v) for v in obj]
+    return obj
+
+return JSONResponse(content=limpiar_json(resultado))
 
 
 # ──────────────────────────────────────────────────────────────────────────────
