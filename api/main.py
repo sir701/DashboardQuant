@@ -37,7 +37,7 @@ def limpiar_json(obj):
     return obj
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def health():
     return {"status": "ok", "service": "DataLab API v1.0"}
 
