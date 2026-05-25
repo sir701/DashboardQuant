@@ -1,6 +1,5 @@
 """
 analysis.py — Lógica extraída directamente del dashboard.qmd
-Funciones puras: sin Flask, sin FastAPI. Solo pandas + plotly.
 """
 
 import math
@@ -9,10 +8,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
-
-# ──────────────────────────────────────────────────────────────────────────────
-# PALETA Y TEMA (mismo que el .qmd)
-# ──────────────────────────────────────────────────────────────────────────────
 
 _TC  = "#4A6FDC"
 _FC  = "#3A4A5E"
@@ -35,13 +30,8 @@ def _ly(**kw):
     return b
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# FUNCIONES AUXILIARES (idénticas al .qmd)
-# ──────────────────────────────────────────────────────────────────────────────
-
 def a_numero(v):
     try:
-        # Elimina comas de separador de miles (ej: '1,678' -> 1678.0)
         return float(str(v).replace(",", ""))
     except:
         return None
@@ -73,11 +63,11 @@ def contar_faltantes(valores: list, n_total: int):
 
 def calcular_media(datos):       return sum(datos) / len(datos)
 
-def calcular_mediana(datos):     # datos ya ordenados
+def calcular_mediana(datos):   
     n = len(datos); m = n // 2
     return datos[m] if n % 2 == 1 else (datos[m-1] + datos[m]) / 2
 
-def calcular_cuartil(datos, q):  # datos ya ordenados
+def calcular_cuartil(datos, q): 
     pos = q * (len(datos) - 1); inf = int(pos); frac = pos - inf
     return (datos[inf] + frac*(datos[inf+1]-datos[inf])
             if inf+1 < len(datos) else datos[inf])
@@ -108,21 +98,12 @@ def tabla_frecuencias(valores, max_cat=15):
     return tabla
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# FUNCIÓN MAESTRA (misma del .qmd, adaptada para retornar JSON-serializable)
-# ──────────────────────────────────────────────────────────────────────────────
-
 def analizar_dataset(df: pd.DataFrame) -> dict:
-    # ── ⓪ LIMPIEZA: convierte columnas numéricas-de-texto a números reales ──
-    # Esto resuelve el caso de comas como separador de miles (ej: '1,678').
-    # Sin esto, .corr() y .std() fallan sobre columnas de texto.
     df = df.copy()
     for col in df.columns:
-        # Si NO es ya un tipo numérico de pandas pero clasifica como numérica → convertir
         if not pd.api.types.is_numeric_dtype(df[col]) and clasificar_columna(df[col]) == "numerica":
             df[col] = pd.to_numeric(df[col].map(a_numero), errors="coerce")
 
-    # ① Duplicados
     vistas = set(); duplicados = 0
     for _, fila in df.iterrows():
         clave = tuple(str(v) for v in fila)
@@ -154,7 +135,6 @@ def analizar_dataset(df: pd.DataFrame) -> dict:
             "cardinalidad" : cardinalidad,
         })
 
-        # ── Numérica ──────────────────────────────────────────
         if tipo == "numerica":
             cols_num.append(col)
             validos = sorted([a_numero(v) for v in valores if a_numero(v) is not None])
@@ -192,7 +172,6 @@ def analizar_dataset(df: pd.DataFrame) -> dict:
             else:
                 variables[col] = {"tipo":"numerica","meta":{"Obs. válidas":0},"estadisticas":[],"charts":{}}
 
-        # ── Categórica ────────────────────────────────────────
         else:
             cols_cat.append(col)
             moda, freq_moda = calcular_moda(valores)
@@ -229,9 +208,7 @@ def analizar_dataset(df: pd.DataFrame) -> dict:
     }
 
 
-# ──────────────────────────────────────────────────────────────────────────────
 # GRÁFICOS (devuelven JSON string para el frontend)
-# ──────────────────────────────────────────────────────────────────────────────
 
 def _sample(df, col, n=6000):
     """Devuelve valores muestreados para no serializar datasets enormes."""
@@ -249,14 +226,12 @@ def _charts_numerica(df: pd.DataFrame, col: str, validos: list) -> dict:
     vals  = _sample(df, col)
     tmp   = pd.DataFrame({col: vals})
 
-    # Histograma
     fig_h = px.histogram(tmp, x=col, nbins=40,
                          color_discrete_sequence=[color],
                          title=f"Histograma — {col}")
     fig_h.update_layout(**_ly(bargap=0.04, showlegend=False,
                               xaxis_title=col, yaxis_title="Frecuencia"))
 
-    # Boxplot
     fig_b = px.box(tmp, y=col,
                    color_discrete_sequence=[color],
                    title=f"Boxplot — {col}")
@@ -294,7 +269,6 @@ def _charts_categorica(df: pd.DataFrame, col: str, top_n=15) -> dict:
 
 
 def _chart_heatmap(df: pd.DataFrame, cols_num: list, max_cols=18) -> str | None:
-    # Solo columnas con varianza real
     cols = [c for c in cols_num[:max_cols]
             if c in df.columns and df[c].nunique() > 2 and df[c].std() > 0]
     if len(cols) < 2:
@@ -331,7 +305,6 @@ def _chart_treemap(df: pd.DataFrame, cols_cat: list, cols_num: list) -> str | No
     for c in path_c:
         tmp[c] = tmp[c].fillna("(Sin dato)").astype(str)
     if cols_num:
-        # Solo la primera numérica con varianza
         num_var = [c for c in cols_num if c in df.columns and df[c].std() > 0]
         if num_var:
             tmp["_v"] = df[num_var[0]].abs().fillna(0)
@@ -350,11 +323,8 @@ def _chart_treemap(df: pd.DataFrame, cols_cat: list, cols_num: list) -> str | No
     fig.update_layout(**_ly(height=480))
     return _to_json(fig)
 
-# ──────────────────────────────────────────────────────────────────────────────
+
 # GRÁFICOS AVANZADOS — Tab "Avanzado" del dashboard web
-# Muestreo SOLO para dibujar (las estadísticas usan el dataset completo).
-# Fallback inteligente: usa todo el dataset salvo que exceda el umbral.
-# ──────────────────────────────────────────────────────────────────────────────
 
 def _cvar(df: pd.DataFrame, max_cols=18):
     """Columnas numéricas con varianza real (excluye constantes)."""
@@ -388,7 +358,6 @@ def _ph_json(msg: str) -> str:
     return _to_json(fig)
 
 
-# 1. Violin — distribución por variable numérica (sin límite: agrega datos)
 def _chart_violin(df: pd.DataFrame, cols_num: list) -> str:
     try:
         cols = [c for c in cols_num if c in df.columns and df[c].std() > 0][:8]
@@ -412,7 +381,6 @@ def _chart_violin(df: pd.DataFrame, cols_num: list) -> str:
         return _ph_json(f"Violin — {e}")
 
 
-# 2. Scatter Matrix (umbral 5000 — el más pesado: N×N puntos)
 def _chart_scatter_matrix(df: pd.DataFrame, cols_num: list) -> str:
     try:
         cols = [c for c in cols_num if c in df.columns and df[c].std() > 0][:6]
@@ -441,7 +409,6 @@ def _chart_scatter_matrix(df: pd.DataFrame, cols_num: list) -> str:
         return _ph_json(f"Scatter Matrix — {e}")
 
 
-# 3. Parallel Coordinates (umbral 8000)
 def _chart_parallel(df: pd.DataFrame, cols_num: list) -> str:
     try:
         cols = [c for c in cols_num if c in df.columns and df[c].std() > 0][:8]
@@ -467,7 +434,6 @@ def _chart_parallel(df: pd.DataFrame, cols_num: list) -> str:
         return _ph_json(f"Parallel Coords — {e}")
 
 
-# 4. Sankey — flujo entre dos categóricas (sin límite: agrupa)
 def _chart_sankey(df: pd.DataFrame, cols_cat: list) -> str:
     try:
         if len(cols_cat) < 2:
@@ -501,7 +467,6 @@ def _chart_sankey(df: pd.DataFrame, cols_cat: list) -> str:
         return _ph_json(f"Sankey — {e}")
 
 
-# 5. Barras agrupadas — media de numéricas por categoría (sin límite: agrega)
 def _chart_grouped_bars(df: pd.DataFrame, cols_cat: list, cols_num: list) -> str:
     try:
         if not cols_cat or not cols_num:
