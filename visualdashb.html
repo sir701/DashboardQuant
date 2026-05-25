@@ -1,0 +1,1759 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DataLab — Análisis Exploratorio</title>
+
+  <!--
+    ════════════════════════════════════════════════════════════
+    FRONTEND SCAFFOLD — DataLab
+    ────────────────────────────────────────────────────────────
+    Este archivo es el punto de entrada en GitHub Pages.
+    Toda la lógica de análisis vive en el backend (FastAPI).
+    La capa visual está rediseñada como un instrumento científico:
+      · Tema oscuro / acento eléctrico cyan
+      · Tipografía: JetBrains Mono (datos) + Sora (UI)
+      · Densidad alta, jerarquía explícita, sin slop corporativo
+    Toda la lógica JS, los IDs del DOM y BACKEND_URL están intactos.
+    ════════════════════════════════════════════════════════════
+  -->
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+
+  <style>
+    /* ══════════════════════════════════════════════════════
+       TOKENS — Instrumento científico, modo oscuro
+       ══════════════════════════════════════════════════════ */
+    :root {
+      /* Superficie */
+      --bg:        #0a0d10;
+      --bg-2:      #0e1216;
+      --surface:   #11161b;
+      --surface-2: #161c22;
+      --border:    #1d2530;
+      --border-2:  #283341;
+      --hairline:  #141a21;
+
+      /* Texto */
+      --text:      #dde4ea;
+      --text-dim:  #95a3b1;
+      --muted:     #5e6d7c;
+      --faint:     #3a4654;
+
+      /* Acento dominante: cyan eléctrico (lectura de oscilo­scopio) */
+      --accent:        oklch(0.85 0.16 205);
+      --accent-2:      oklch(0.92 0.12 205);
+      --accent-dim:    oklch(0.55 0.11 205);
+      --accent-glow:   oklch(0.85 0.16 205 / 0.18);
+      --accent-faint:  oklch(0.85 0.16 205 / 0.06);
+
+      /* Secundarios — SOLO badges/tipo */
+      --amber:    oklch(0.82 0.15 75);
+      --amber-bg: oklch(0.82 0.15 75 / 0.10);
+      --rose:     oklch(0.72 0.18 25);
+      --rose-bg:  oklch(0.72 0.18 25 / 0.10);
+      --lime:     oklch(0.85 0.18 140);
+      --lime-bg:  oklch(0.85 0.18 140 / 0.10);
+
+      /* Type */
+      --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+      --font-sans: "Sora", ui-sans-serif, system-ui, sans-serif;
+
+      --radius: 4px;
+      --radius-lg: 8px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-feature-settings: "ss01", "cv11";
+      -webkit-font-smoothing: antialiased;
+      letter-spacing: -0.005em;
+    }
+
+    /* Grilla de fondo sutil — solo se ve si miras de cerca */
+    body::before {
+      content: "";
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(to right, rgba(255,255,255,.018) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255,255,255,.018) 1px, transparent 1px);
+      background-size: 56px 56px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+    /* ──────────────────────────────────────────────────────
+       SCROLLBAR
+       ────────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: var(--bg-2); }
+    ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 0; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
+
+    /* ──────────────────────────────────────────────────────
+       PANTALLAS — manager
+       ────────────────────────────────────────────────────── */
+    .screen { display: none; position: relative; z-index: 1; }
+    .screen.active { display: block; }
+
+    /* ══════════════════════════════════════════════════════
+       PANTALLA 1 — UPLOAD (cámara de muestra)
+       ══════════════════════════════════════════════════════ */
+    #screen-upload {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      padding: 28px 40px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Cabecera del laboratorio */
+    .lab-head {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 11px; color: var(--text-dim);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .lab-head .brand {
+      display: flex; align-items: center; gap: 14px;
+    }
+    .brand-mark {
+      width: 22px; height: 22px;
+      border: 1.5px solid var(--accent);
+      display: grid; place-items: center;
+      position: relative;
+    }
+    .brand-mark::after {
+      content: ""; width: 6px; height: 6px;
+      background: var(--accent);
+      box-shadow: 0 0 12px var(--accent);
+    }
+    .brand-name {
+      font-family: var(--font-sans);
+      font-size: 13px; font-weight: 600;
+      color: var(--text);
+      letter-spacing: 0.16em;
+    }
+    .brand-sub { color: var(--muted); }
+    .lab-head .right { text-align: right; line-height: 1.6; }
+    .lab-head .right .row { display: flex; gap: 14px; justify-content: flex-end; }
+    .lab-head .right b { color: var(--accent); font-weight: 500; }
+
+    /* Status pill */
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: var(--font-mono); font-size: 10px;
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      letter-spacing: 0.1em;
+    }
+    .status-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .35; }
+    }
+
+    /* Cámara de muestra — el momento visual */
+    .specimen-chamber {
+      align-self: center;
+      justify-self: center;
+      width: min(720px, 100%);
+      position: relative;
+      padding: 56px 48px;
+      margin: 40px 0;
+    }
+
+    /* Corner brackets */
+    .specimen-chamber::before,
+    .specimen-chamber::after,
+    .specimen-chamber .bracket-tr,
+    .specimen-chamber .bracket-bl {
+      content: "";
+      position: absolute;
+      width: 28px; height: 28px;
+      border-color: var(--accent);
+      border-style: solid;
+    }
+    .specimen-chamber::before { top: 0; left: 0; border-width: 1.5px 0 0 1.5px; }
+    .specimen-chamber::after  { bottom: 0; right: 0; border-width: 0 1.5px 1.5px 0; }
+    .specimen-chamber .bracket-tr { top: 0; right: 0; border-width: 1.5px 1.5px 0 0; }
+    .specimen-chamber .bracket-bl { bottom: 0; left: 0; border-width: 0 0 1.5px 1.5px; }
+
+    /* Reticle + grid pulsante DENTRO de la cámara */
+    .chamber-inner {
+      position: relative;
+      padding: 60px 32px 48px;
+      background:
+        radial-gradient(circle at center, var(--accent-faint), transparent 60%),
+        linear-gradient(to right, rgba(255,255,255,.022) 1px, transparent 1px) 0 0/24px 24px,
+        linear-gradient(to bottom, rgba(255,255,255,.022) 1px, transparent 1px) 0 0/24px 24px,
+        var(--bg-2);
+      border: 1px solid var(--border);
+      text-align: center;
+      overflow: hidden;
+      transition: border-color .2s, background .2s;
+    }
+    #drop-zone { cursor: pointer; }
+    #drop-zone.over .chamber-inner {
+      border-color: var(--accent);
+      background:
+        radial-gradient(circle at center, var(--accent-glow), transparent 65%),
+        linear-gradient(to right, rgba(61,223,255,.05) 1px, transparent 1px) 0 0/24px 24px,
+        linear-gradient(to bottom, rgba(61,223,255,.05) 1px, transparent 1px) 0 0/24px 24px,
+        var(--bg-2);
+    }
+    #drop-zone.over .reticle { transform: scale(1.06); }
+    #drop-zone.over .scan-line { animation-duration: 1.2s; }
+
+    /* Líneas de escaneo */
+    .scan-line {
+      position: absolute; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: .45;
+      animation: scan 3.6s linear infinite;
+      pointer-events: none;
+    }
+    .scan-line.s2 { animation-delay: -1.8s; opacity: .25; }
+    @keyframes scan {
+      0%   { top: -2px; }
+      100% { top: calc(100% + 2px); }
+    }
+
+    /* Reticle / target */
+    .reticle {
+      width: 84px; height: 84px;
+      margin: 0 auto 24px;
+      position: relative;
+      transition: transform .25s ease;
+    }
+    .reticle .ring {
+      position: absolute; inset: 0;
+      border: 1.5px solid var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 0 1px var(--bg-2) inset, 0 0 24px var(--accent-glow);
+      animation: ring-pulse 2.8s ease-in-out infinite;
+    }
+    .reticle .ring.r2 {
+      inset: 14px; opacity: .35; animation-delay: -1.4s;
+    }
+    @keyframes ring-pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50%      { transform: scale(.94); opacity: .55; }
+    }
+    .reticle::before, .reticle::after {
+      content: ""; position: absolute; background: var(--accent);
+    }
+    .reticle::before { /* horizontal crosshair */
+      top: 50%; left: -10px; right: -10px; height: 1px;
+      box-shadow: 0 0 6px var(--accent);
+    }
+    .reticle::after { /* vertical crosshair */
+      left: 50%; top: -10px; bottom: -10px; width: 1px;
+      box-shadow: 0 0 6px var(--accent);
+    }
+    .reticle .core {
+      position: absolute; top: 50%; left: 50%;
+      width: 8px; height: 8px;
+      background: var(--accent);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 16px var(--accent);
+    }
+
+    .chamber-title {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--accent);
+      letter-spacing: 0.32em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .chamber-headline {
+      font-family: var(--font-sans);
+      font-size: 30px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .chamber-headline .em {
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-weight: 500;
+    }
+    .chamber-sub {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-dim);
+      letter-spacing: 0.04em;
+      margin-bottom: 28px;
+    }
+
+    .chamber-action {
+      display: inline-flex; align-items: center; gap: 14px;
+      padding: 12px 22px 12px 26px;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      cursor: pointer;
+      position: relative;
+      transition: filter .15s, transform .15s;
+    }
+    .chamber-action:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .chamber-action:active { transform: translateY(0); }
+    .chamber-action::after {
+      content: "→";
+      font-family: var(--font-sans);
+      font-weight: 400;
+      transform: translateY(-1px);
+    }
+
+    /* Formatos soportados — tipo manifest */
+    .formats {
+      display: flex; gap: 0;
+      justify-content: center;
+      margin-top: 22px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+    }
+    .formats .fmt {
+      padding: 4px 14px;
+      border-left: 1px solid var(--border);
+      position: relative;
+    }
+    .formats .fmt:first-child { border-left: none; }
+    .formats .fmt .ext { color: var(--text-dim); }
+
+    #file-input { display: none; }
+
+    /* Pie del laboratorio */
+    .lab-foot {
+      display: flex; justify-content: space-between;
+      align-items: center;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+    .lab-foot b { color: var(--text-dim); font-weight: 500; }
+    .lab-foot .right { display: flex; gap: 22px; align-items: center; }
+
+    /* ══════════════════════════════════════════════════════
+       PANTALLA 2 — LOADING (espectro animado)
+       ══════════════════════════════════════════════════════ */
+    #screen-loading {
+      min-height: 100vh;
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 32px;
+      padding: 40px;
+      position: relative;
+    }
+    .spectrum {
+      display: flex; align-items: flex-end;
+      gap: 6px;
+      height: 96px;
+      padding: 0 8px;
+      position: relative;
+    }
+    .spectrum::before, .spectrum::after {
+      content: ""; position: absolute;
+      width: 12px; height: 12px;
+      border-color: var(--accent);
+      border-style: solid;
+    }
+    .spectrum::before { top: -12px; left: -16px; border-width: 1px 0 0 1px; }
+    .spectrum::after  { bottom: -12px; right: -16px; border-width: 0 1px 1px 0; }
+    .spectrum .bar {
+      width: 8px;
+      background: linear-gradient(to top, var(--accent-dim), var(--accent));
+      box-shadow: 0 0 12px var(--accent-glow);
+      transform-origin: bottom;
+      animation: spec 1.2s ease-in-out infinite;
+    }
+    .spectrum .bar:nth-child(1)  { animation-delay: -.0s;  }
+    .spectrum .bar:nth-child(2)  { animation-delay: -.1s; }
+    .spectrum .bar:nth-child(3)  { animation-delay: -.2s; }
+    .spectrum .bar:nth-child(4)  { animation-delay: -.3s; }
+    .spectrum .bar:nth-child(5)  { animation-delay: -.4s; }
+    .spectrum .bar:nth-child(6)  { animation-delay: -.5s; }
+    .spectrum .bar:nth-child(7)  { animation-delay: -.6s; }
+    .spectrum .bar:nth-child(8)  { animation-delay: -.7s; }
+    .spectrum .bar:nth-child(9)  { animation-delay: -.8s; }
+    .spectrum .bar:nth-child(10) { animation-delay: -.9s; }
+    .spectrum .bar:nth-child(11) { animation-delay: -.45s; }
+    .spectrum .bar:nth-child(12) { animation-delay: -.65s; }
+    @keyframes spec {
+      0%, 100% { height: 14%; }
+      50%      { height: 92%; }
+    }
+
+    .loading-readout {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-dim);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      min-width: 360px;
+      text-align: center;
+    }
+    .loading-readout::before {
+      content: "> ";
+      color: var(--accent);
+    }
+    #loading-msg::after {
+      content: "▊";
+      color: var(--accent);
+      animation: blink 1s steps(2) infinite;
+      margin-left: 4px;
+    }
+    @keyframes blink {
+      50% { opacity: 0; }
+    }
+
+    .loading-meta {
+      display: grid; grid-template-columns: repeat(3, auto); gap: 24px;
+      font-family: var(--font-mono); font-size: 10px;
+      color: var(--muted); letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .loading-meta b { color: var(--accent); font-weight: 500; }
+
+    /* ══════════════════════════════════════════════════════
+       PANTALLA 3 — ERROR
+       ══════════════════════════════════════════════════════ */
+    #screen-error {
+      min-height: 100vh;
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 40px;
+      gap: 18px;
+      text-align: center;
+    }
+    .err-icon {
+      width: 56px; height: 56px;
+      border: 1.5px solid var(--rose);
+      display: grid; place-items: center;
+      color: var(--rose);
+      font-family: var(--font-mono);
+      font-size: 26px;
+      box-shadow: 0 0 24px oklch(0.72 0.18 25 / 0.2);
+    }
+    .err-code {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.2em;
+      color: var(--rose);
+    }
+    #screen-error h2 {
+      font-family: var(--font-sans);
+      font-weight: 600;
+      font-size: 22px;
+      letter-spacing: -0.01em;
+    }
+    #error-msg {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--text-dim);
+      max-width: 520px;
+      line-height: 1.6;
+      padding: 14px 18px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+    #screen-error button {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      padding: 10px 22px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    #screen-error button:hover { background: var(--accent-faint); }
+
+    /* ══════════════════════════════════════════════════════
+       PANTALLA 4 — DASHBOARD
+       ══════════════════════════════════════════════════════ */
+    #screen-dashboard {
+      min-height: 100vh;
+      display: none;
+      animation: dash-in .6s ease both;
+    }
+    @keyframes dash-in {
+      0%   { opacity: 0; transform: translateY(8px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Topbar ──────────────────────────────────────────── */
+    #topbar {
+      position: sticky; top: 0; z-index: 50;
+      background: rgba(10, 13, 16, 0.85);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center;
+      gap: 20px;
+      padding: 12px 24px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+    #topbar h2 {
+      font-family: var(--font-sans);
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--text);
+      letter-spacing: 0.16em;
+      display: flex; align-items: center; gap: 12px;
+    }
+    #topbar h2::before {
+      content: "";
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 1.5px solid var(--accent);
+      position: relative;
+    }
+    #topbar h2::after {
+      content: "";
+      width: 4px; height: 4px;
+      background: var(--accent);
+      position: absolute;
+      left: 32px;
+      box-shadow: 0 0 8px var(--accent);
+    }
+    #topbar-file {
+      color: var(--text-dim);
+      letter-spacing: 0.04em;
+      padding-left: 16px;
+      border-left: 1px solid var(--border);
+    }
+    #topbar-file::before {
+      content: "DATASET / ";
+      color: var(--muted);
+    }
+    #topbar-spacer { flex: 1; }
+    .topbar-meta {
+      display: flex; gap: 18px;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .topbar-meta b { color: var(--accent); font-weight: 500; }
+    #btn-reset {
+      background: transparent;
+      color: var(--text-dim);
+      border: 1px solid var(--border-2);
+      padding: 8px 16px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    #btn-reset:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    /* ── KPI Row ─────────────────────────────────────────── */
+    #kpi-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      padding: 0;
+      margin: 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .kpi-card {
+      background: var(--bg);
+      padding: 22px 24px 20px;
+      position: relative;
+      transition: background .2s;
+      overflow: hidden;
+    }
+    .kpi-card:hover { background: var(--surface); }
+    .kpi-card::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0;
+      width: 12px; height: 12px;
+      border-top: 1px solid var(--accent-dim);
+      border-left: 1px solid var(--accent-dim);
+      opacity: .6;
+    }
+    .kpi-card:hover::before {
+      border-color: var(--accent);
+      opacity: 1;
+    }
+    .kpi-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .kpi-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .kpi-card .kpi-id {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+    }
+    .kpi-value {
+      font-family: var(--font-mono);
+      font-size: 32px;
+      font-weight: 500;
+      color: var(--text);
+      line-height: 1;
+      letter-spacing: -0.02em;
+      font-variant-numeric: tabular-nums;
+      display: flex; align-items: baseline; gap: 6px;
+    }
+    .kpi-value .unit {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 400;
+      letter-spacing: 0.06em;
+    }
+    .kpi-card .kpi-bar {
+      margin-top: 14px;
+      height: 2px;
+      background: var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+    .kpi-card .kpi-bar::after {
+      content: "";
+      position: absolute;
+      top: 0; left: 0;
+      height: 100%;
+      width: var(--bar, 60%);
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent-glow);
+    }
+    .kpi-card[data-tone="alert"] .kpi-bar::after { background: var(--rose); box-shadow: 0 0 8px oklch(0.72 0.18 25 / 0.4); }
+    .kpi-card[data-tone="warn"] .kpi-bar::after  { background: var(--amber); box-shadow: 0 0 8px oklch(0.82 0.15 75 / 0.4); }
+
+    /* ── Tabs ────────────────────────────────────────────── */
+    #tabs-bar {
+      display: flex; gap: 0;
+      padding: 0 24px;
+      background: var(--bg-2);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      position: sticky;
+      top: 49px;
+      z-index: 40;
+    }
+    .tab-btn {
+      background: transparent;
+      color: var(--text-dim);
+      border: none;
+      padding: 14px 22px 12px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      cursor: pointer;
+      white-space: nowrap;
+      position: relative;
+      transition: color .15s;
+    }
+    .tab-btn::before {
+      content: attr(data-idx) " / ";
+      color: var(--faint);
+      margin-right: 4px;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); }
+    .tab-btn.active::before { color: var(--accent-dim); }
+    .tab-btn.active::after {
+      content: "";
+      position: absolute;
+      left: 0; right: 0; bottom: -1px;
+      height: 2px;
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent);
+    }
+
+    /* Tab panels */
+    .tab-panel {
+      display: none;
+      padding: 28px 32px 60px;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+    .tab-panel.active {
+      display: block;
+      animation: tab-in .35s ease both;
+    }
+    @keyframes tab-in {
+      0%   { opacity: 0; transform: translateY(6px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Section title ───────────────────────────────────── */
+    .section-title {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--accent);
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      padding-left: 14px;
+      position: relative;
+    }
+    .section-title::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 50%; transform: translateY(-50%);
+      width: 6px; height: 6px;
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent);
+    }
+    .section-title .meta {
+      color: var(--muted);
+      font-weight: 400;
+      letter-spacing: 0.12em;
+      margin-left: 12px;
+    }
+
+    /* ── Tablas ──────────────────────────────────────────── */
+    .table-wrapper {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      overflow-x: auto;
+    }
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+    .data-table th {
+      background: var(--surface-2);
+      text-align: left;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 500;
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      position: sticky; top: 0;
+    }
+    .data-table td {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--hairline);
+      color: var(--text);
+    }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr:hover td { background: var(--surface-2); color: var(--accent-2); }
+    .data-table td.dim { color: var(--text-dim); }
+
+    /* ── Variable cards ──────────────────────────────────── */
+    #var-filter {
+      width: 100%; max-width: 420px;
+      padding: 11px 16px 11px 38px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      outline: none;
+      margin-bottom: 24px;
+      transition: border-color .15s;
+      position: relative;
+    }
+    #var-filter::placeholder { color: var(--muted); letter-spacing: 0.08em; }
+    #var-filter:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-glow); }
+
+    .filter-wrap {
+      position: relative;
+      margin-bottom: 8px;
+    }
+    .filter-wrap::before {
+      content: "⌕";
+      position: absolute;
+      left: 14px; top: 50%; transform: translateY(-52%);
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 14px;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .var-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      margin-bottom: 24px;
+      position: relative;
+      transition: border-color .2s, transform .2s;
+      animation: card-in .4s ease both;
+    }
+    .var-card:hover {
+      border-color: var(--border-2);
+    }
+    @keyframes card-in {
+      0% { opacity: 0; transform: translateY(8px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Barra de acento lateral por tipo */
+    .var-card::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+      background: var(--accent);
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+    .var-card[data-tipo="cat"]::before {
+      background: var(--amber);
+      box-shadow: 0 0 12px oklch(0.82 0.15 75 / 0.3);
+    }
+
+    .var-card-header {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 22px 13px;
+      border-bottom: 1px solid var(--border);
+      background:
+        linear-gradient(90deg, var(--accent-faint), transparent 30%),
+        var(--surface-2);
+    }
+    .var-card[data-tipo="cat"] .var-card-header {
+      background:
+        linear-gradient(90deg, var(--amber-bg), transparent 30%),
+        var(--surface-2);
+    }
+
+    .var-glyph {
+      width: 28px; height: 28px;
+      display: grid; place-items: center;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .var-card[data-tipo="cat"] .var-glyph {
+      border-color: var(--amber);
+      color: var(--amber);
+    }
+
+    .var-badge {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.16em;
+      padding: 3px 8px;
+      text-transform: uppercase;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      background: var(--accent-faint);
+    }
+    .var-badge.cat {
+      border-color: var(--amber);
+      color: var(--amber);
+      background: var(--amber-bg);
+    }
+
+    .var-card-name {
+      font-family: var(--font-sans);
+      font-weight: 600;
+      font-size: 15px;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .var-card-meta {
+      margin-left: auto;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      letter-spacing: 0.04em;
+      display: flex; gap: 16px; align-items: center;
+      flex-wrap: wrap; justify-content: flex-end;
+    }
+    .var-card-meta span { color: var(--muted); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
+    .var-card-meta b { color: var(--text); font-weight: 500; }
+
+    .var-card-body { padding: 22px; }
+
+    .charts-row {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px;
+    }
+    @media (max-width: 900px) { .charts-row { grid-template-columns: 1fr; } }
+
+    /* ── Alerts ──────────────────────────────────────────── */
+    .alert {
+      padding: 14px 18px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      margin-bottom: 12px;
+      border-left: 3px solid;
+      background: var(--surface);
+      display: flex; align-items: center; gap: 12px;
+    }
+    .alert::before {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      font-weight: 500;
+      padding: 2px 8px;
+      flex-shrink: 0;
+    }
+    .alert-ok       { border-color: var(--lime); color: var(--text); }
+    .alert-ok::before { content: "PASS"; background: var(--lime-bg); color: var(--lime); border: 1px solid var(--lime); }
+    .alert-warning  { border-color: var(--amber); color: var(--text); }
+    .alert-warning::before { content: "WARN"; background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber); }
+    .alert-danger   { border-color: var(--rose); color: var(--text); }
+    .alert-danger::before { content: "FAIL"; background: var(--rose-bg); color: var(--rose); border: 1px solid var(--rose); }
+
+    /* ── Plot box ─────────────────────────────────────────── */
+    .plot-box {
+      min-height: 320px;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      padding: 12px;
+    }
+
+    /* ── Preview wrap ─────────────────────────────────────── */
+    #preview-wrap {
+      max-height: 400px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+    #preview-wrap > div {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--text-dim);
+      padding: 22px 24px;
+      line-height: 1.8;
+    }
+    #preview-wrap code {
+      background: var(--surface-2);
+      color: var(--accent);
+      padding: 2px 6px;
+      font-size: 11px;
+      border: 1px solid var(--border);
+    }
+
+    /* Side guides on tab panels */
+    .tab-panel > .section-title:not(:first-child) {
+      margin-top: 32px;
+    }
+
+    .stack-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 28px 0;
+      position: relative;
+    }
+    .stack-divider::before {
+      content: "—";
+      position: absolute;
+      left: 0; top: 50%; transform: translateY(-50%);
+      background: var(--bg);
+      padding-right: 12px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.2em;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- PANTALLA 1 — UPLOAD                                    -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div id="screen-upload">
+
+  <header class="lab-head">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div>
+        <div class="brand-name">DATALAB</div>
+        <div class="brand-sub mono">EXPLORATORY ANALYSIS · v2.7</div>
+      </div>
+    </div>
+    <div class="right mono">
+      <div class="row">
+        <span class="status-pill">
+          <span class="status-dot"></span>BACKEND ONLINE
+        </span>
+      </div>
+      <div style="margin-top:6px">SESSION · <b id="lab-session">XR-04821</b></div>
+    </div>
+  </header>
+
+  <div id="drop-zone">
+    <div class="specimen-chamber">
+      <span class="bracket-tr"></span>
+      <span class="bracket-bl"></span>
+
+      <div class="chamber-inner">
+        <div class="scan-line"></div>
+        <div class="scan-line s2"></div>
+
+        <div class="reticle">
+          <div class="ring"></div>
+          <div class="ring r2"></div>
+          <div class="core"></div>
+        </div>
+
+        <div class="chamber-title">// SPECIMEN CHAMBER</div>
+        <h1 class="chamber-headline">
+          Deposita un dataset<br>
+          para iniciar el <span class="em">análisis</span>
+        </h1>
+        <p class="chamber-sub">Arrastra el archivo · o selecciónalo manualmente</p>
+
+        <button class="chamber-action" onclick="document.getElementById('file-input').click()">
+          Seleccionar archivo
+        </button>
+        <input type="file" id="file-input" accept=".csv,.xlsx,.xls,.json" />
+
+        <div class="formats">
+          <div class="fmt"><span class="ext">CSV</span> &nbsp;·&nbsp; comma</div>
+          <div class="fmt"><span class="ext">XLSX</span> · workbook</div>
+          <div class="fmt"><span class="ext">XLS</span> &nbsp;· legacy</div>
+          <div class="fmt"><span class="ext">JSON</span> · records</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="lab-foot">
+    <div><b>// SECURE TRANSPORT</b> · Los datos se procesan en el servidor y no se almacenan</div>
+    <div class="right">
+      <span>RUNTIME · <b>PYTHON 3.11</b></span>
+      <span>ENGINE · <b>PANDAS / PLOTLY</b></span>
+      <span>LAT · <b>~120MS</b></span>
+    </div>
+  </footer>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- PANTALLA 2 — LOADING                                   -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div id="screen-loading">
+  <div class="spectrum">
+    <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+    <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+    <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+    <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+  </div>
+  <div class="loading-readout"><span id="loading-msg">Subiendo archivo…</span></div>
+  <div class="loading-meta">
+    <div>STAGE · <b id="load-stage">01 / 03</b></div>
+    <div>STREAM · <b>ACTIVE</b></div>
+    <div>NODE · <b>FASTAPI</b></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- PANTALLA 3 — ERROR                                     -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div id="screen-error">
+  <div class="err-icon">!</div>
+  <div class="err-code">// ERR · ANALYSIS_HALTED</div>
+  <h2>Algo salió mal</h2>
+  <p id="error-msg"></p>
+  <button onclick="resetApp()">↺ Reintentar</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- PANTALLA 4 — DASHBOARD                                 -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div id="screen-dashboard">
+
+  <!-- Topbar -->
+  <div id="topbar">
+    <h2>DATALAB</h2>
+    <span id="topbar-file"></span>
+    <div id="topbar-spacer"></div>
+    <div class="topbar-meta">
+      <span><span class="status-dot" style="display:inline-block;vertical-align:middle;margin-right:6px"></span>READY</span>
+      <span>SESSION · <b>XR-04821</b></span>
+    </div>
+    <button id="btn-reset" onclick="resetApp()">← Nuevo archivo</button>
+  </div>
+
+  <!-- KPI Cards -->
+  <div id="kpi-row"></div>
+
+  <!-- Tabs nav -->
+  <div id="tabs-bar">
+    <button class="tab-btn active" data-tab="tab-datos" data-idx="01">Datos</button>
+    <button class="tab-btn" data-tab="tab-calidad" data-idx="02">Calidad</button>
+    <button class="tab-btn" data-tab="tab-variables" data-idx="03">Variables</button>
+    <button class="tab-btn" data-tab="tab-correlacion" data-idx="04">Correlación</button>
+    <button class="tab-btn" data-tab="tab-avanzado" data-idx="05">Avanzado</button>
+  </div>
+
+  <!-- ── Tab: Datos ── -->
+  <div class="tab-panel active" id="tab-datos">
+    <p class="section-title">Vista previa <span class="meta">// primeras 10 filas</span></p>
+    <div class="table-wrapper" id="preview-wrap"><p>Cargando…</p></div>
+
+    <p class="section-title" style="margin-top:36px">Descripción de variables <span class="meta">// schema + tipos detectados</span></p>
+    <div class="table-wrapper">
+      <table class="data-table" id="calidad-table"></table>
+    </div>
+  </div>
+
+  <!-- ── Tab: Calidad ── -->
+  <div class="tab-panel" id="tab-calidad">
+    <p class="section-title">Diagnóstico <span class="meta">// integridad del dataset</span></p>
+    <div id="calidad-alerts"></div>
+
+    <p class="section-title" style="margin-top:36px">Faltantes por variable</p>
+    <div class="table-wrapper">
+      <table class="data-table" id="calidad-table2"></table>
+    </div>
+
+    <div id="duplicados-info" style="margin-top:32px"></div>
+  </div>
+
+  <!-- ── Tab: Variables ── -->
+  <div class="tab-panel" id="tab-variables">
+    <p class="section-title">Catálogo de variables <span class="meta">// estadísticas + distribuciones</span></p>
+    <div class="filter-wrap">
+      <input type="text" id="var-filter" placeholder="Filtrar variable…" />
+    </div>
+    <div id="variables-container"></div>
+  </div>
+
+  <!-- ── Tab: Correlación ── -->
+  <div class="tab-panel" id="tab-correlacion">
+    <p class="section-title">Heatmap de Correlación <span class="meta">// matriz Pearson</span></p>
+    <div id="chart-heatmap" class="plot-box"></div>
+
+    <p class="section-title" style="margin-top:36px">Treemap Jerárquico <span class="meta">// composición categórica</span></p>
+    <div id="chart-treemap" class="plot-box"></div>
+  </div>
+
+  <!-- ── Tab: Avanzado ── -->
+  <div class="tab-panel" id="tab-avanzado">
+    <p class="section-title">Violin Plot <span class="meta">// distribución completa por variable</span></p>
+    <div id="chart-violin" class="plot-box"></div>
+
+    <p class="section-title" style="margin-top:36px">Barras Agrupadas <span class="meta">// media de numéricas por categoría</span></p>
+    <div id="chart-grouped-bars" class="plot-box"></div>
+
+    <p class="section-title" style="margin-top:36px">Scatter Matrix <span class="meta">// relaciones entre variables numéricas</span></p>
+    <div id="chart-scatter-matrix" class="plot-box"></div>
+
+    <p class="section-title" style="margin-top:36px">Coordenadas Paralelas <span class="meta">// vista multivariable</span></p>
+    <div id="chart-parallel" class="plot-box"></div>
+
+    <p class="section-title" style="margin-top:36px">Sankey <span class="meta">// flujo entre variables categóricas</span></p>
+    <div id="chart-sankey" class="plot-box"></div>
+
+    <p class="section-title" style="margin-top:36px">Serie & Media Móvil <span class="meta">// evolución de variables numéricas</span></p>
+    <div id="chart-rolling" class="plot-box"></div>
+  </div>
+
+</div><!-- /dashboard -->
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- JAVASCRIPT — lógica intacta                            -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<script>
+// ── Configuración ──────────────────────────────────────────────────────────
+// GitHub Actions inyecta la URL real al hacer deploy (via sed en el workflow).
+// En desarrollo local, cámbiala manualmente.
+const BACKEND_URL = "https://dashboardquant.onrender.com";
+// Ejemplo local: const BACKEND_URL = "http://127.0.0.1:8000";
+
+// ── Estado global ──────────────────────────────────────────────────────────
+let currentData = null;
+
+// ══════════════════════════════════════════════════════════
+// UPLOAD — Drag & Drop + input[file]
+// ══════════════════════════════════════════════════════════
+const dropZone  = document.getElementById("drop-zone");
+const fileInput = document.getElementById("file-input");
+
+dropZone.addEventListener("dragover",  e => { e.preventDefault(); dropZone.classList.add("over"); });
+dropZone.addEventListener("dragleave", ()  => dropZone.classList.remove("over"));
+dropZone.addEventListener("drop",      e  => {
+  e.preventDefault(); dropZone.classList.remove("over");
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+fileInput.addEventListener("change", e => {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+// ══════════════════════════════════════════════════════════
+// HANDLE FILE — envía al backend y procesa respuesta
+// ══════════════════════════════════════════════════════════
+async function handleFile(file) {
+  showScreen("loading");
+  setLoadingMsg("Subiendo archivo…");
+
+  const form = new FormData();
+  form.append("file", file);
+
+  try {
+    setLoadingMsg("Analizando dataset…");
+    const res  = await fetch(`${BACKEND_URL}/analyze`, { method: "POST", body: form });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || `Error ${res.status}`);
+    }
+
+    setLoadingMsg("Renderizando dashboard…");
+    const data = await res.json();
+    currentData = data;
+    renderDashboard(data, file.name);
+    showScreen("dashboard");
+
+  } catch (e) {
+    document.getElementById("error-msg").textContent = e.message;
+    showScreen("error");
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// RENDER DASHBOARD
+// ══════════════════════════════════════════════════════════
+function renderDashboard(d, filename) {
+
+  // Topbar
+  document.getElementById("topbar-file").textContent = filename;
+
+  // ── KPI Cards ──────────────────────────────────────────
+  const totalCols = d.meta.columnas || 1;
+  const kpiData = [
+    { id: "K01", value: d.meta.filas.toLocaleString(),  unit: "rows",  label: "Total registros",     bar: 100,                                       tone: "ok"   },
+    { id: "K02", value: d.meta.columnas,                unit: "cols",  label: "Variables",            bar: 100,                                       tone: "ok"   },
+    { id: "K03", value: d.meta.cols_numericas,          unit: "vars",  label: "Numéricas",            bar: (d.meta.cols_numericas / totalCols) * 100, tone: "ok"   },
+    { id: "K04", value: d.meta.cols_categoricas,        unit: "vars",  label: "Categóricas",          bar: (d.meta.cols_categoricas / totalCols) * 100, tone: "ok" },
+    { id: "K05", value: d.duplicados.toLocaleString(),  unit: "rows",  label: "Duplicadas",           bar: Math.min(100, (d.duplicados / Math.max(1, d.meta.filas)) * 100 * 20), tone: d.duplicados > 0 ? "alert" : "ok" },
+    { id: "K06", value: d.cols_con_faltantes,           unit: "vars",  label: "Vars. con faltantes",  bar: Math.min(100, (d.cols_con_faltantes / totalCols) * 100),               tone: d.cols_con_faltantes > 0 ? "warn" : "ok" },
+  ];
+  document.getElementById("kpi-row").innerHTML = kpiData.map(k =>
+    `<div class="kpi-card" data-tone="${k.tone}" style="--bar:${k.bar}%">
+       <div class="kpi-head">
+         <span class="kpi-label">${k.label}</span>
+         <span class="kpi-id">${k.id}</span>
+       </div>
+       <div class="kpi-value">${k.value}<span class="unit">${k.unit}</span></div>
+       <div class="kpi-bar"></div>
+     </div>`
+  ).join("");
+
+  // ── Tab: Datos ─────────────────────────────────────────
+  renderTable("preview-wrap", buildPreviewTable(d));
+  renderTableEl(document.getElementById("calidad-table"), d.calidad);
+
+  // ── Tab: Calidad ───────────────────────────────────────
+  const alertsEl = document.getElementById("calidad-alerts");
+  alertsEl.innerHTML = "";
+  if (d.duplicados === 0) {
+    alertsEl.innerHTML += alert_html("ok", "Sin filas duplicadas detectadas.");
+  } else {
+    alertsEl.innerHTML += alert_html("danger", `${d.duplicados.toLocaleString()} filas duplicadas detectadas.`);
+  }
+  if (d.cols_con_faltantes === 0) {
+    alertsEl.innerHTML += alert_html("ok", "Ninguna variable tiene datos faltantes.");
+  } else {
+    alertsEl.innerHTML += alert_html("warning", `${d.cols_con_faltantes} variable(s) tienen datos faltantes.`);
+  }
+  renderTableEl(document.getElementById("calidad-table2"), d.calidad);
+
+  const dupEl = document.getElementById("duplicados-info");
+  dupEl.innerHTML = `<p class="section-title">Duplicados</p>
+    <div class="${d.duplicados > 0 ? "alert alert-danger" : "alert alert-ok"}">
+      ${d.duplicados > 0
+        ? `Se encontraron <strong>${d.duplicados.toLocaleString()}</strong> filas duplicadas
+           (${((d.duplicados/d.meta.filas)*100).toFixed(2)}% del total).`
+        : "No se encontraron filas duplicadas."}
+    </div>`;
+
+  // ── Tab: Variables ─────────────────────────────────────
+  renderVariables(d.variables);
+
+  // ── Tab: Correlación ───────────────────────────────────
+  renderGlobalCharts(d.charts_global);
+  renderAdvanced(d.charts_avanzados);
+
+  // ── Filtro de variables ────────────────────────────────
+  document.getElementById("var-filter").addEventListener("input", e => {
+    const q = e.target.value.toLowerCase();
+    document.querySelectorAll(".var-card").forEach(card => {
+      card.style.display = card.dataset.name.toLowerCase().includes(q) ? "" : "none";
+    });
+  });
+}
+
+// ── Construye preview table desde calidad (no tenemos rows en /analyze) ──
+function buildPreviewTable(d) {
+  // El endpoint /analyze no devuelve rows. Mostramos un mensaje con los datos de calidad.
+  return `<div>
+    Vista previa no disponible desde <code>/analyze</code>.
+    El endpoint <code>/preview</code> devuelve las primeras filas si lo necesitas.
+    <br><br>El dataset tiene <strong style="color:var(--accent)">${d.meta.filas.toLocaleString()} filas</strong>
+    × <strong style="color:var(--accent)">${d.meta.columnas} columnas</strong>.
+  </div>`;
+}
+
+function renderTable(containerId, html) {
+  document.getElementById(containerId).innerHTML = html;
+}
+
+function renderTableEl(el, rows) {
+  if (!rows || !rows.length) { el.innerHTML = "<tr><td>Sin datos</td></tr>"; return; }
+  const cols = Object.keys(rows[0]);
+  el.innerHTML =
+    `<thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>` +
+    `<tbody>${rows.map(r =>
+      `<tr>${cols.map(c => `<td>${r[c] ?? ""}</td>`).join("")}</tr>`
+    ).join("")}</tbody>`;
+}
+
+function alert_html(type, msg) {
+  return `<div class="alert alert-${type}">${msg}</div>`;
+}
+
+// ── Render variables ───────────────────────────────────────────────────────
+function renderVariables(variables) {
+  const container = document.getElementById("variables-container");
+  container.innerHTML = "";
+
+  for (const [col, info] of Object.entries(variables)) {
+    const isNum = info.tipo === "numerica";
+    const card  = document.createElement("div");
+    card.className   = "var-card";
+    card.dataset.name = col;
+    card.dataset.tipo = isNum ? "num" : "cat";
+
+    let bodyHTML = "";
+
+    if (isNum) {
+      const statsRows = (info.estadisticas || []).map(r =>
+        `<tr><td class="dim">${r.Grupo}</td>
+             <td>${r.Medida}</td>
+             <td style="color:var(--accent);font-weight:500">${r.Valor}</td></tr>`
+      ).join("");
+      bodyHTML = `
+        <div class="table-wrapper" style="max-width:600px">
+          <table class="data-table">
+            <thead><tr><th>Grupo</th><th>Medida</th><th>Valor</th></tr></thead>
+            <tbody>${statsRows}</tbody>
+          </table>
+        </div>
+        <div class="charts-row" id="charts-${sanitizeId(col)}"></div>`;
+    } else {
+      const freqRows = (info.tabla_frecuencias || []).map(r =>
+        `<tr><td>${r["Categoría"]}</td><td>${r["Frecuencia"].toLocaleString()}</td>
+             <td class="dim">${r["% Relativo"]}%</td><td class="dim">${r["% Acumulado"]}%</td></tr>`
+      ).join("");
+      bodyHTML = `
+        <div class="table-wrapper" style="max-width:600px">
+          <table class="data-table">
+            <thead><tr><th>Categoría</th><th>Frecuencia</th><th>% Relativo</th><th>% Acumulado</th></tr></thead>
+            <tbody>${freqRows}</tbody>
+          </table>
+        </div>
+        <div id="charts-${sanitizeId(col)}" style="margin-top:18px"></div>`;
+    }
+
+    const metaStr = Object.entries(info.meta || {})
+      .map(([k,v]) => `<span>${k}</span> <b>${v}</b>`)
+      .join("");
+
+    const glyph = isNum ? "σ" : "▦";
+    const badgeLabel = isNum ? "NUM" : "CAT";
+
+    card.innerHTML = `
+      <div class="var-card-header">
+        <span class="var-glyph">${glyph}</span>
+        <span class="var-badge ${isNum ? "" : "cat"}">${badgeLabel}</span>
+        <span class="var-card-name">${col}</span>
+        <span class="var-card-meta">${metaStr}</span>
+      </div>
+      <div class="var-card-body">${bodyHTML}</div>`;
+
+    container.appendChild(card);
+
+    // Renderizar gráficos Plotly
+    const chartsDiv = document.getElementById(`charts-${sanitizeId(col)}`);
+    if (info.charts) {
+      if (isNum) {
+        if (info.charts.histograma) {
+          const d1 = document.createElement("div"); d1.className = "plot-box";
+          chartsDiv.appendChild(d1);
+          Plotly.react(d1, JSON.parse(info.charts.histograma));
+        }
+        if (info.charts.boxplot) {
+          const d2 = document.createElement("div"); d2.className = "plot-box";
+          chartsDiv.appendChild(d2);
+          Plotly.react(d2, JSON.parse(info.charts.boxplot));
+        }
+      } else {
+        if (info.charts.categorico) {
+          const d3 = document.createElement("div"); d3.className = "plot-box";
+          chartsDiv.appendChild(d3);
+          Plotly.react(d3, JSON.parse(info.charts.categorico));
+        }
+      }
+    }
+  }
+}
+
+// ── Render heatmap + treemap ───────────────────────────────────────────────
+function renderGlobalCharts(charts) {
+  if (charts?.heatmap) {
+    Plotly.react(document.getElementById("chart-heatmap"), JSON.parse(charts.heatmap));
+  } else {
+    document.getElementById("chart-heatmap").innerHTML =
+      `<p style="color:var(--muted);padding:1rem;font-family:var(--font-mono);font-size:12px">// Se necesitan ≥2 variables numéricas con varianza.</p>`;
+  }
+  if (charts?.treemap) {
+    Plotly.react(document.getElementById("chart-treemap"), JSON.parse(charts.treemap));
+  } else {
+    document.getElementById("chart-treemap").innerHTML =
+      `<p style="color:var(--muted);padding:1rem;font-family:var(--font-mono);font-size:12px">// Se necesita ≥1 variable categórica.</p>`;
+  }
+}
+
+// ── Render gráficos avanzados (tab Avanzado) ───────────────────────────────
+function renderAdvanced(charts) {
+  if (!charts) return;
+  const pairs = [
+    ["chart-violin",         charts.violin],
+    ["chart-grouped-bars",   charts.grouped_bars],
+    ["chart-scatter-matrix", charts.scatter_matrix],
+    ["chart-parallel",       charts.parallel],
+    ["chart-sankey",         charts.sankey],
+    ["chart-rolling",        charts.rolling],
+  ];
+  pairs.forEach(([id, json]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (json && json.length > 50) {
+      try { Plotly.react(el, JSON.parse(json)); }
+      catch(e) { el.innerHTML = `<p style="color:var(--muted);padding:1rem;font-family:var(--font-mono);font-size:12px">// Error al renderizar: ${e.message}</p>`; }
+    } else {
+      el.innerHTML = `<p style="color:var(--muted);padding:1rem;font-family:var(--font-mono);font-size:12px">// Sin datos suficientes para este gráfico.</p>`;
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+// TABS
+// ══════════════════════════════════════════════════════════
+document.getElementById("tabs-bar").addEventListener("click", e => {
+  const btn = e.target.closest(".tab-btn");
+  if (!btn) return;
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+  btn.classList.add("active");
+  document.getElementById(btn.dataset.tab).classList.add("active");
+  // Fuerza resize de Plotly al cambiar tab (evita gráficos colapsados)
+  window.dispatchEvent(new Event("resize"));
+});
+
+// ══════════════════════════════════════════════════════════
+// UTILIDADES
+// ══════════════════════════════════════════════════════════
+function showScreen(name) {
+  ["upload","loading","error","dashboard"].forEach(s => {
+    document.getElementById(`screen-${s}`).style.display =
+      s === name ? (name === "loading" ? "flex" : "block") : "none";
+  });
+  if (name === "upload") {
+    document.getElementById("screen-upload").style.display = "grid";
+  }
+}
+showScreen("upload");
+
+function setLoadingMsg(msg) {
+  document.getElementById("loading-msg").textContent = msg;
+  // Stage hint (cosmético — no altera lógica)
+  const stage = document.getElementById("load-stage");
+  if (stage) {
+    if (msg.includes("Subiendo"))         stage.textContent = "01 / 03";
+    else if (msg.includes("Analizando"))  stage.textContent = "02 / 03";
+    else if (msg.includes("Renderizando")) stage.textContent = "03 / 03";
+  }
+}
+
+function resetApp() {
+  currentData = null;
+  document.getElementById("file-input").value = "";
+  showScreen("upload");
+}
+
+function sanitizeId(str) {
+  return str.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- ADICIONES VISUALES — no alteran la lógica existente    -->
+<!--                                                        -->
+<!-- (1) Tema oscuro automático para todas las figuras       -->
+<!--     Plotly que devuelva el backend.                    -->
+<!-- (2) Datos mock cuando BACKEND_URL aún es el placeholder -->
+<!--     de GitHub Actions (preview / desarrollo local sin   -->
+<!--     servidor). En producción, BACKEND_URL es real y     -->
+<!--     este interceptor no se activa.                      -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<script>
+// ── (1) Tema oscuro de Plotly ─────────────────────────────
+(function darkPlotly() {
+  if (typeof Plotly === "undefined") return;
+  const palette = ["#3ddfff", "#f5b13a", "#a78bfa", "#86efac", "#fb7185", "#60a5fa", "#fbbf24", "#34d399"];
+  const baseAxis = {
+    gridcolor: "#1d2530",
+    linecolor: "#283341",
+    zerolinecolor: "#283341",
+    tickcolor: "#283341",
+    tickfont: { color: "#95a3b1", family: "JetBrains Mono, monospace", size: 10 },
+    title:    { font: { color: "#dde4ea", family: "Sora, sans-serif", size: 12 } },
+  };
+  const darkLayout = {
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor:  "rgba(0,0,0,0)",
+    font:          { color: "#dde4ea", family: "JetBrains Mono, monospace", size: 11 },
+    colorway:      palette,
+    margin:        { l: 56, r: 24, t: 30, b: 44 },
+    xaxis:         baseAxis,
+    yaxis:         baseAxis,
+    legend:        { font: { color: "#dde4ea" }, bgcolor: "rgba(0,0,0,0)" },
+    title:         { font: { color: "#dde4ea", family: "Sora, sans-serif", size: 13 }, x: 0.02 },
+    coloraxis:     { colorscale: [[0, "#0a0d10"], [0.5, "#1e6b88"], [1, "#3ddfff"]] },
+    treemapcolorway: palette,
+    hoverlabel:    { bgcolor: "#11161b", bordercolor: "#3ddfff", font: { color: "#dde4ea", family: "JetBrains Mono, monospace" } },
+  };
+
+  function deepMerge(target, src) {
+    const out = Array.isArray(target) ? target.slice() : { ...(target || {}) };
+    for (const k of Object.keys(src || {})) {
+      const sv = src[k], tv = out[k];
+      if (sv && typeof sv === "object" && !Array.isArray(sv) && tv && typeof tv === "object" && !Array.isArray(tv)) {
+        out[k] = deepMerge(tv, sv);
+      } else if (out[k] === undefined) {
+        out[k] = sv;
+      }
+    }
+    return out;
+  }
+
+  // Aplicar a un objeto figura `{ data, layout }` en sitio
+  function applyDark(fig) {
+    if (!fig || typeof fig !== "object") return fig;
+    if (fig.layout) fig.layout = deepMerge(fig.layout, darkLayout);
+    else fig.layout = { ...darkLayout };
+    if (Array.isArray(fig.data)) {
+      fig.data.forEach(tr => {
+        if (tr.type === "heatmap" && !tr.colorscale) {
+          tr.colorscale = [[0, "#0a0d10"], [0.5, "#1e6b88"], [1, "#3ddfff"]];
+        }
+        if (tr.marker && tr.marker.line && !tr.marker.line.color) tr.marker.line.color = "#0a0d10";
+      });
+    }
+    return fig;
+  }
+
+  const _react   = Plotly.react;
+  const _newPlot = Plotly.newPlot;
+  Plotly.react   = function(el, arg1, layout, config) {
+    if (arg1 && arg1.data && arg1.layout !== undefined) {
+      applyDark(arg1);
+      return _react.call(this, el, arg1, undefined, { displayModeBar: false, ...(config||{}) });
+    }
+    return _react.call(this, el, arg1, layout, { displayModeBar: false, ...(config||{}) });
+  };
+  Plotly.newPlot = function(el, arg1, layout, config) {
+    if (arg1 && arg1.data && arg1.layout !== undefined) {
+      applyDark(arg1);
+      return _newPlot.call(this, el, arg1, undefined, { displayModeBar: false, ...(config||{}) });
+    }
+    return _newPlot.call(this, el, arg1, layout, { displayModeBar: false, ...(config||{}) });
+  };
+})();
+
+// ── (2) Datos mock cuando BACKEND_URL es el placeholder ───
+// (Sólo se activa en preview/desarrollo. En producción, BACKEND_URL es real.)
+(function mockBackend() {
+  if (!BACKEND_URL.includes("__")) return;
+
+  const _fetch = window.fetch.bind(window);
+  window.fetch = async (url, opts) => {
+    if (typeof url === "string" && url.includes("/analyze")) {
+      // Simular latencia de red + análisis
+      await new Promise(r => setTimeout(r, 1100));
+
+      // Plotly mock figures
+      const hist = (name) => JSON.stringify({
+        data: [{ type: "histogram", x: Array.from({length:300}, () => Math.round(Math.random()*60 + 30 + Math.sin(Math.random()*6)*10)), marker: { color: "#3ddfff", line: { width: 1 } }, nbinsx: 22 }],
+        layout: { title: `Distribución · ${name}`, height: 280 }
+      });
+      const box = (name) => JSON.stringify({
+        data: [{ type: "box", y: Array.from({length:200}, () => Math.random()*100), name: name, marker: { color: "#3ddfff" }, boxmean: "sd" }],
+        layout: { title: `Boxplot · ${name}`, height: 280 }
+      });
+      const cat = (name, cats) => JSON.stringify({
+        data: [{ type: "bar", x: cats.map(c=>c[0]), y: cats.map(c=>c[1]), marker: { color: "#f5b13a", line: { width: 1 } } }],
+        layout: { title: `Frecuencias · ${name}`, height: 300 }
+      });
+      const heatmap = () => {
+        const labels = ["age", "income", "spend", "tenure", "score", "visits"];
+        const z = labels.map((_,i) => labels.map((_,j) => i===j ? 1 : +(Math.cos((i*j+1)/3)*0.85).toFixed(2)));
+        return JSON.stringify({
+          data: [{ type: "heatmap", x: labels, y: labels, z: z, zmin: -1, zmax: 1, showscale: true,
+                   colorscale: [[0, "#fb7185"], [0.5, "#0a0d10"], [1, "#3ddfff"]] }],
+          layout: { title: "Correlación de Pearson", height: 420 }
+        });
+      };
+      const treemap = () => JSON.stringify({
+        data: [{
+          type: "treemap",
+          labels: ["Total", "Premium", "Standard", "Trial", "NA", "Active", "Churn", "EU", "AM", "AS"],
+          parents: ["", "Total", "Total", "Total", "Total", "Premium", "Premium", "Standard", "Standard", "Standard"],
+          values: [1000, 320, 480, 140, 60, 220, 100, 180, 200, 100],
+          marker: { line: { color: "#0a0d10", width: 2 } }
+        }],
+        layout: { title: "Composición por segmento", height: 420 }
+      });
+
+      const calidad = [
+        { variable: "age",      tipo: "int64",   no_nulos: 1187, nulos: 13,  "% nulos": "1.08%", unicos: 64,  cardinalidad: "media" },
+        { variable: "income",   tipo: "float64", no_nulos: 1200, nulos: 0,   "% nulos": "0.00%", unicos: 982, cardinalidad: "alta"  },
+        { variable: "tenure",   tipo: "int64",   no_nulos: 1200, nulos: 0,   "% nulos": "0.00%", unicos: 24,  cardinalidad: "baja"  },
+        { variable: "score",    tipo: "float64", no_nulos: 1158, nulos: 42,  "% nulos": "3.50%", unicos: 411, cardinalidad: "alta"  },
+        { variable: "segment",  tipo: "object",  no_nulos: 1200, nulos: 0,   "% nulos": "0.00%", unicos: 3,   cardinalidad: "baja"  },
+        { variable: "country",  tipo: "object",  no_nulos: 1192, nulos: 8,   "% nulos": "0.67%", unicos: 12,  cardinalidad: "media" },
+        { variable: "active",   tipo: "bool",    no_nulos: 1200, nulos: 0,   "% nulos": "0.00%", unicos: 2,   cardinalidad: "baja"  },
+      ];
+
+      const variables = {
+        age: {
+          tipo: "numerica",
+          meta: { dtype: "int64", "no nulos": "1,187", min: 18, max: 84, media: 41.3 },
+          estadisticas: [
+            { Grupo: "Tendencia",   Medida: "Media",    Valor: "41.3" },
+            { Grupo: "Tendencia",   Medida: "Mediana",  Valor: "39.0" },
+            { Grupo: "Tendencia",   Medida: "Moda",     Valor: "34"   },
+            { Grupo: "Dispersión",  Medida: "σ",        Valor: "14.7" },
+            { Grupo: "Dispersión",  Medida: "Varianza", Valor: "216.1" },
+            { Grupo: "Dispersión",  Medida: "Rango",    Valor: "66"   },
+            { Grupo: "Forma",       Medida: "Asimetría",Valor: "0.42" },
+            { Grupo: "Forma",       Medida: "Curtosis", Valor: "-0.31" },
+          ],
+          charts: { histograma: hist("age"), boxplot: box("age") }
+        },
+        income: {
+          tipo: "numerica",
+          meta: { dtype: "float64", "no nulos": "1,200", min: "12.4k", max: "245.7k", media: "58.9k" },
+          estadisticas: [
+            { Grupo: "Tendencia",   Medida: "Media",    Valor: "58,920" },
+            { Grupo: "Tendencia",   Medida: "Mediana",  Valor: "52,400" },
+            { Grupo: "Dispersión",  Medida: "σ",        Valor: "22,150" },
+            { Grupo: "Dispersión",  Medida: "IQR",      Valor: "27,800" },
+            { Grupo: "Forma",       Medida: "Asimetría",Valor: "1.18"   },
+          ],
+          charts: { histograma: hist("income"), boxplot: box("income") }
+        },
+        segment: {
+          tipo: "categorica",
+          meta: { dtype: "object", "no nulos": "1,200", unicos: 3, moda: "Standard" },
+          tabla_frecuencias: [
+            { "Categoría": "Standard", "Frecuencia": 580, "% Relativo": "48.33", "% Acumulado": "48.33" },
+            { "Categoría": "Premium",  "Frecuencia": 420, "% Relativo": "35.00", "% Acumulado": "83.33" },
+            { "Categoría": "Trial",    "Frecuencia": 200, "% Relativo": "16.67", "% Acumulado": "100.00" },
+          ],
+          charts: { categorico: cat("segment", [["Standard",580],["Premium",420],["Trial",200]]) }
+        },
+        country: {
+          tipo: "categorica",
+          meta: { dtype: "object", "no nulos": "1,192", unicos: 12, moda: "ES" },
+          tabla_frecuencias: [
+            { "Categoría": "ES", "Frecuencia": 312, "% Relativo": "26.17", "% Acumulado": "26.17" },
+            { "Categoría": "FR", "Frecuencia": 198, "% Relativo": "16.61", "% Acumulado": "42.78" },
+            { "Categoría": "DE", "Frecuencia": 184, "% Relativo": "15.44", "% Acumulado": "58.22" },
+            { "Categoría": "IT", "Frecuencia": 142, "% Relativo": "11.91", "% Acumulado": "70.13" },
+            { "Categoría": "PT", "Frecuencia": 118, "% Relativo": "9.90",  "% Acumulado": "80.03" },
+            { "Categoría": "Otros", "Frecuencia": 238, "% Relativo": "19.97", "% Acumulado": "100.00" },
+          ],
+          charts: { categorico: cat("country", [["ES",312],["FR",198],["DE",184],["IT",142],["PT",118],["Otros",238]]) }
+        },
+      };
+
+      const data = {
+        meta: { filas: 1200, columnas: 7, cols_numericas: 4, cols_categoricas: 3 },
+        duplicados: 4,
+        cols_con_faltantes: 3,
+        calidad: calidad,
+        variables: variables,
+        charts_global: { heatmap: heatmap(), treemap: treemap() }
+      };
+
+      return new Response(JSON.stringify(data), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    return _fetch(url, opts);
+  };
+
+  // Indicador visible de modo demo
+  const pill = document.querySelector("#screen-upload .status-pill");
+  if (pill) {
+    pill.innerHTML = '<span class="status-dot" style="background:var(--amber);box-shadow:0 0 8px var(--amber)"></span>DEMO MODE · MOCK DATA';
+  }
+})();
+</script>
+</body>
+</html>
