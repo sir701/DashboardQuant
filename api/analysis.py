@@ -210,6 +210,9 @@ def analizar_dataset(df: pd.DataFrame) -> dict:
         "treemap": _chart_treemap(df, cols_cat, cols_num),
     }
 
+    # Gráficos avanzados (tab "Avanzado")
+    charts_adv = charts_avanzados(df, cols_num, cols_cat)
+
     return {
         "meta":         {"filas": len(df), "columnas": len(df.columns),
                          "cols_numericas": len(cols_num),
@@ -221,7 +224,8 @@ def analizar_dataset(df: pd.DataFrame) -> dict:
         "cols_categoricas": cols_cat,
         "variables":    variables,
         "resumen_numericas": resumen,
-        "charts_global": charts_global,
+        "charts_global":   charts_global,
+        "charts_avanzados": charts_adv,
     }
 
 
@@ -345,3 +349,217 @@ def _chart_treemap(df: pd.DataFrame, cols_cat: list, cols_num: list) -> str | No
                       hovertemplate="<b>%{label}</b><br>%{value:,.0f}<extra></extra>")
     fig.update_layout(**_ly(height=480))
     return _to_json(fig)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# GRÁFICOS AVANZADOS — Tab "Avanzado" del dashboard web
+# Muestreo SOLO para dibujar (las estadísticas usan el dataset completo).
+# Fallback inteligente: usa todo el dataset salvo que exceda el umbral.
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _cvar(df: pd.DataFrame, max_cols=18):
+    """Columnas numéricas con varianza real (excluye constantes)."""
+    return [c for c in df.columns
+            if pd.api.types.is_numeric_dtype(df[c])
+            and df[c].dropna().nunique() > 2
+            and float(df[c].std()) > 0][:max_cols]
+
+def _ccat(df: pd.DataFrame, mx=80):
+    """Columnas categóricas con 2–mx categorías únicas."""
+    return [c for c in df.columns
+            if not pd.api.types.is_numeric_dtype(df[c])
+            and 2 <= df[c].nunique(dropna=True) <= mx]
+
+def _df_sample(df: pd.DataFrame, n=15000) -> pd.DataFrame:
+    """Muestra el DataFrame SOLO si excede n filas (fallback inteligente)."""
+    if len(df) > n:
+        return df.sample(n=n, random_state=42).reset_index(drop=True)
+    return df.reset_index(drop=True)
+
+def _ph_json(msg: str) -> str:
+    """Placeholder con mensaje cuando no hay datos suficientes."""
+    fig = go.Figure()
+    fig.add_annotation(
+        text=f"<b>Sin datos suficientes</b><br><span style='font-size:11px'>{msg}</span>",
+        xref="paper", yref="paper", x=0.5, y=0.5,
+        showarrow=False, font=dict(color=_FC, size=13), align="center",
+    )
+    fig.update_layout(**_ly(height=200,
+                            xaxis=dict(visible=False), yaxis=dict(visible=False)))
+    return _to_json(fig)
+
+
+# 1. Violin — distribución por variable numérica (sin límite: agrega datos)
+def _chart_violin(df: pd.DataFrame, cols_num: list) -> str:
+    try:
+        cols = [c for c in cols_num if c in df.columns and df[c].std() > 0][:8]
+        if len(cols) < 2:
+            return _ph_json("Se necesitan ≥2 variables numéricas con varianza")
+        fig = go.Figure()
+        for i, col in enumerate(cols):
+            fig.add_trace(go.Violin(
+                y=df[col].dropna().tolist(),
+                name=col[:16], box_visible=True, meanline_visible=True,
+                fillcolor=_PAL[i % len(_PAL)], opacity=0.7,
+                line_color=_PAL[i % len(_PAL)],
+            ))
+        fig.update_layout(**_ly(
+            title="Distribución por Variable — Violin Plot",
+            height=420, showlegend=False, yaxis_title="Valor",
+            violingap=0.08, violinmode="overlay",
+        ))
+        return _to_json(fig)
+    except Exception as e:
+        return _ph_json(f"Violin — {e}")
+
+
+# 2. Scatter Matrix (umbral 5000 — el más pesado: N×N puntos)
+def _chart_scatter_matrix(df: pd.DataFrame, cols_num: list) -> str:
+    try:
+        cols = [c for c in cols_num if c in df.columns and df[c].std() > 0][:6]
+        if len(cols) < 2:
+            return _ph_json("Se necesitan ≥2 variables con varianza")
+        tmp  = _df_sample(df, n=5000)
+        cats = _ccat(tmp)
+        color_col = cats[0] if cats else None
+        splom_dims = [dict(label=c[:14], values=tmp[c].tolist()) for c in cols]
+        marker = dict(size=4, opacity=0.5,
+                      color=tmp[color_col].astype("category").cat.codes.tolist()
+                      if color_col else _PAL[0],
+                      colorscale=[[i/max(len(_PAL)-1,1), c] for i,c in enumerate(_PAL)]
+                      if color_col else None,
+                      showscale=False)
+        fig = go.Figure(go.Splom(
+            dimensions=splom_dims, marker=marker,
+            showupperhalf=False, diagonal_visible=True,
+        ))
+        fig.update_layout(**_ly(
+            title="Scatter Matrix — Relaciones entre Variables Numéricas",
+            height=max(500, 130 * len(cols)),
+        ))
+        return _to_json(fig)
+    except Exception as e:
+        return _ph_json(f"Scatter Matrix — {e}")
+
+
+# 3. Parallel Coordinates (umbral 8000)
+def _chart_parallel(df: pd.DataFrame, cols_num: list) -> str:
+    try:
+        cols = [c for c in cols_num if c in df.columns and df[c].std() > 0][:8]
+        if len(cols) < 3:
+            return _ph_json("Se necesitan ≥3 variables con varianza")
+        tmp  = _df_sample(df[cols], n=8000)
+        dims = []
+        for col in cols:
+            s = tmp[col].dropna()
+            dims.append(dict(label=col[:14], values=tmp[col].tolist(),
+                             range=[float(s.min()), float(s.max())]))
+        fig = go.Figure(go.Parcoords(
+            line=dict(color=tmp[cols[0]].tolist(),
+                      colorscale=[[0,_PAL[3]],[0.5,_PAL[0]],[1,_PAL[1]]],
+                      showscale=True,
+                      cmin=float(tmp[cols[0]].min()), cmax=float(tmp[cols[0]].max())),
+            dimensions=dims,
+        ))
+        fig.update_layout(**_ly(
+            title="Coordenadas Paralelas — Vista Multivariable", height=420))
+        return _to_json(fig)
+    except Exception as e:
+        return _ph_json(f"Parallel Coords — {e}")
+
+
+# 4. Sankey — flujo entre dos categóricas (sin límite: agrupa)
+def _chart_sankey(df: pd.DataFrame, cols_cat: list) -> str:
+    try:
+        if len(cols_cat) < 2:
+            return _ph_json("Se necesitan ≥2 variables categóricas para Sankey")
+        src_col, tgt_col = cols_cat[0], cols_cat[1]
+        tmp = df[[src_col, tgt_col]].dropna()
+        tmp = tmp[tmp[src_col].astype(str).str.len() < 40]
+        tmp = tmp[tmp[tgt_col].astype(str).str.len() < 40]
+        top_src = tmp[src_col].value_counts().head(8).index.tolist()
+        top_tgt = tmp[tgt_col].value_counts().head(8).index.tolist()
+        tmp = tmp[tmp[src_col].isin(top_src) & tmp[tgt_col].isin(top_tgt)]
+        if len(tmp) < 10:
+            return _ph_json("Datos insuficientes para Sankey con estas categorías")
+        flows = tmp.groupby([src_col, tgt_col]).size().reset_index(name="n")
+        all_nodes = list(dict.fromkeys(flows[src_col].tolist() + flows[tgt_col].tolist()))
+        node_idx = {n: i for i, n in enumerate(all_nodes)}
+        colors = [_PAL[i % len(_PAL)] for i in range(len(all_nodes))]
+        fig = go.Figure(go.Sankey(
+            node=dict(label=all_nodes, color=colors, pad=15, thickness=20),
+            link=dict(
+                source=[node_idx[r[src_col]] for _, r in flows.iterrows()],
+                target=[node_idx[r[tgt_col]] for _, r in flows.iterrows()],
+                value=flows["n"].tolist(),
+                color="rgba(107,143,207,0.3)",
+            ),
+        ))
+        fig.update_layout(**_ly(
+            title=f"Sankey — Flujo de {src_col[:18]} → {tgt_col[:18]}", height=440))
+        return _to_json(fig)
+    except Exception as e:
+        return _ph_json(f"Sankey — {e}")
+
+
+# 5. Barras agrupadas — media de numéricas por categoría (sin límite: agrega)
+def _chart_grouped_bars(df: pd.DataFrame, cols_cat: list, cols_num: list) -> str:
+    try:
+        if not cols_cat or not cols_num:
+            return _ph_json("Se necesita ≥1 variable categórica y ≥1 numérica")
+        cat_col  = cols_cat[0]
+        num_cols = [c for c in cols_num if c in df.columns and df[c].std() > 0][:5]
+        top_cats = df[cat_col].value_counts().head(10).index.tolist()
+        tmp      = df[df[cat_col].isin(top_cats)]
+        agg      = tmp.groupby(cat_col)[num_cols].mean().reset_index()
+        fig = go.Figure()
+        for i, nc in enumerate(num_cols):
+            fig.add_trace(go.Bar(name=nc[:18], x=agg[cat_col].tolist(),
+                                 y=agg[nc].round(2).tolist(),
+                                 marker_color=_PAL[i % len(_PAL)]))
+        fig.update_layout(**_ly(
+            title=f"Media de Variables Numéricas por {cat_col[:22]}",
+            barmode="group", height=420,
+            xaxis=dict(title=cat_col, tickangle=-35, showgrid=False),
+            yaxis_title="Media"))
+        return _to_json(fig)
+    except Exception as e:
+        return _ph_json(f"Barras agrupadas — {e}")
+
+
+# 6. Serie & Media Móvil (umbral 15000)
+def _chart_rolling(df: pd.DataFrame, cols_num: list, window: int = 20) -> str:
+    try:
+        cols = [c for c in cols_num if c in df.columns and df[c].std() > 0][:4]
+        if not cols:
+            return _ph_json("Sin variables numéricas con varianza para serie temporal")
+        tmp  = _df_sample(df[cols], n=15000)
+        x    = list(range(len(tmp)))
+        fig  = go.Figure()
+        for i, col in enumerate(cols):
+            s    = tmp[col].ffill()
+            roll = s.rolling(window=min(window, max(2, len(s)//20)),
+                             min_periods=1).mean()
+            fig.add_trace(go.Scatter(x=x, y=s.tolist(), mode="lines", name=col[:14],
+                                     line=dict(color=_PAL[i % len(_PAL)], width=1),
+                                     opacity=0.35))
+            fig.add_trace(go.Scatter(x=x, y=roll.tolist(), mode="lines",
+                                     name=f"{col[:12]} (media móvil)",
+                                     line=dict(color=_PAL[i % len(_PAL)], width=2)))
+        fig.update_layout(**_ly(
+            title="Serie & Media Móvil — Variables Numéricas", height=420,
+            xaxis_title="Índice de registro", yaxis_title="Valor"))
+        return _to_json(fig)
+    except Exception as e:
+        return _ph_json(f"Rolling — {e}")
+
+
+def charts_avanzados(df: pd.DataFrame, cols_num: list, cols_cat: list) -> dict:
+    """Genera todos los gráficos avanzados; devuelve dict de JSON strings."""
+    return {
+        "violin":         _chart_violin(df, cols_num),
+        "scatter_matrix": _chart_scatter_matrix(df, cols_num),
+        "parallel":       _chart_parallel(df, cols_num),
+        "sankey":         _chart_sankey(df, cols_cat),
+        "grouped_bars":   _chart_grouped_bars(df, cols_cat, cols_num),
+        "rolling":        _chart_rolling(df, cols_num),
+    }
