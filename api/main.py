@@ -26,7 +26,6 @@ app.add_middleware(
 )
 
 
-# ── Limpia NaN/Infinity antes de serializar ───────────────────────────────────
 def limpiar_json(obj):
     if isinstance(obj, float):
         return None if (math.isnan(obj) or math.isinf(obj)) else obj
